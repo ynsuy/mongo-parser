@@ -1,0 +1,9 @@
+{
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "medium",
+  "enableInstallTelemetry": false,
+  "compaction": { "enabled": true, "reserveTokens": 4096, "keepRecentTokens": 6000 },
+  "skills": ["skills"],
+  "themes": ["themes/dba.json"]
+}

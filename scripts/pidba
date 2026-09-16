@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_path="${BASH_SOURCE[0]}"
+while [[ -L "$script_path" ]]; do
+  script_dir="$(cd -P "$(dirname "$script_path")" && pwd)"
+  script_path="$(readlink "$script_path")"
+  [[ "$script_path" != /* ]] && script_path="$script_dir/$script_path"
+done
+root="$(cd "$(dirname "$script_path")/.." && pwd -P)"
+command_name="$(basename "$0")"
+export DBA_START_CWD="$PWD"
+
+# The version of this launcher and of the agent configuration it starts. The parser carries its own,
+# stamped into the binary; the three are printed together because a session is all of them.
+pidba_version="$(node -e 'process.stdout.write(require("'"$root"'/package.json").version ?? "0.0.0")' 2>/dev/null || echo "unknown")"
+pi_version="$(node -e 'process.stdout.write(require("'"$root"'/node_modules/@earendil-works/pi-coding-agent/package.json").version)' 2>/dev/null || echo "unknown")"
+
+parser_src="${DBA_PARSER_SRC:-$root/../dba-mongo-parser}"
+parser_bin="${DBA_PARSER_BIN:-$root/bin/dba-mongo-parser}"
+
+# how the parser binary came to be what it is, for the message below and for the status bar.
+parser_origin=""
+
+# build_parser compiles the parser through its own build script, so the binary is stamped with a
+# version. A plain `go build` produces one that cannot say what it is, and one of those is
+# indistinguishable from a binary built weeks ago — which is the whole problem this reports on.
+build_parser() {
+  if [[ -x "$parser_src/scripts/build.sh" ]]; then
+    "$parser_src/scripts/build.sh" "$parser_bin" >/dev/null
+  else
+    # An older parser checkout without the script still builds; it just cannot be identified, and
+    # the parser says so itself when asked for its version.
+    mkdir -p "$(dirname "$parser_bin")"
+    go -C "$parser_src" build -o "$parser_bin" ./cmd/dba-mongo-parser
+  fi
+}
+
+prepare_parser() {
+  if [[ -n "${DBA_PARSER_BIN:-}" ]]; then
+    # An explicit binary is used as given and never rebuilt. That is the point of the variable, and
+    # it is also the easiest way to end up running something very old without noticing, so it is
+    # the one case that always announces itself.
+    if [[ ! -x "$parser_bin" ]]; then
+      printf '%s: DBA_PARSER_BIN is set to %s, which is not an executable\n' "$command_name" "$parser_bin" >&2
+      exit 2
+    fi
+    parser_origin="pinned by DBA_PARSER_BIN, not rebuilt"
+    return
+  fi
+  if [[ -d "$parser_src" ]]; then
+    build_parser
+    parser_origin="built from $parser_src"
+    return
+  fi
+  # No source to build from. Reusing whatever is in bin/ used to happen silently, which is exactly
+  # how a months-old binary keeps answering questions about today's bundles.
+  if [[ -x "$parser_bin" ]]; then
+    parser_origin="REUSED without rebuilding: no parser source at $parser_src"
+    printf '%s: parser source not found at %s\n' "$command_name" "$parser_src" >&2
+    printf '%s: reusing the existing binary %s — it is NOT being rebuilt\n' "$command_name" "$parser_bin" >&2
+    printf '%s: set DBA_PARSER_SRC to the dba-mongo-parser checkout to build a current one\n' "$command_name" >&2
+    return
+  fi
+  printf '%s: dba-mongo-parser not found; set DBA_PARSER_BIN or DBA_PARSER_SRC\n' "$command_name" >&2
+  exit 2
+}
+
+parser_version() {
+  "$parser_bin" --version 2>/dev/null | head -1 || echo "dba-mongo-parser unknown"
+}
+
+case "${1:-}" in
+  --help|-h)
+    printf 'usage: %s [path]\n' "$command_name"
+    printf 'Open a Codex DBA session. You can supply the bundle path in the chat.\n'
+    printf 'First use: /login and select OpenAI Codex.\n\n'
+    printf '  --version   which build of the launcher, the parser and pi this would run\n\n'
+    printf 'DBA_PARSER_SRC  parser checkout to build from (default: alongside this project)\n'
+    printf 'DBA_PARSER_BIN  use this binary as given and do not rebuild it\n'
+    printf 'DBA_MODEL       model to run (default: gpt-5.5)\n'
+    exit 0
+    ;;
+  --version|-v)
+    prepare_parser
+    printf 'pidba %s\n' "$pidba_version"
+    printf '  %s\n' "$(parser_version)"
+    printf '  %s\n' "$parser_origin"
+    printf '  pi %s, model %s\n' "$pi_version" "${DBA_MODEL:-gpt-5.5}"
+    printf '  project %s\n' "$root"
+    exit 0
+    ;;
+esac
+
+data_path="${1:-}"
+if (( $# > 1 )); then
+  printf '%s: expected at most one directory path\n' "$command_name" >&2
+  exit 2
+fi
+if [[ -n "$data_path" ]]; then
+  if [[ ! -d "$data_path" ]]; then
+    printf '%s: directory not found: %s\n' "$command_name" "$data_path" >&2
+    exit 2
+  fi
+  data_path="$(cd "$data_path" && pwd -P)"
+fi
+
+export PI_CODING_AGENT_DIR="$root/.pi/codex-agent"
+export DBA_OBSCURE=1
+export PI_OFFLINE=1
+export PI_TELEMETRY=0
+export PI_SKIP_VERSION_CHECK=1
+
+prepare_parser
+export DBA_PARSER_BIN="$parser_bin"
+export PIDBA_VERSION="$pidba_version"
+export PIDBA_PARSER_ORIGIN="$parser_origin"
+export PIDBA_PI_VERSION="$pi_version"
+
+cd "$root"
+DBA_DATA_PATH="$data_path" exec "$root/node_modules/.bin/pi" \
+  --offline \
+  --approve \
+  --no-session \
+  --no-builtin-tools \
+  --no-extensions \
+  --provider openai-codex \
+  --model "${DBA_MODEL:-gpt-5.5}" \
+  --thinking medium \
+  --extension "$root/.pi/extensions/mongodb.ts" \
+  --theme "$root/.pi/themes/dba.json" \
+  --use-theme dba
