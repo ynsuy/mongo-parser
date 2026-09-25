@@ -1,13 +1,13 @@
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { selectPath, directory } from "../lib/data-path.js";
-import { PromptMask } from "../lib/privacy.js";
+import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
 
 const runFile = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -25,28 +25,65 @@ const systemPrompt = readFileSync(resolve(projectRoot, ".pi/SYSTEM.md"), "utf8")
 const pidbaVersion = process.env.PIDBA_VERSION ?? "unknown";
 const piVersion = process.env.PIDBA_PI_VERSION ?? "unknown";
 const parserOrigin = process.env.PIDBA_PARSER_ORIGIN ?? "";
-let parserVersion = "unknown";
+const parserSource = process.env.PIDBA_PARSER_SOURCE ?? "unknown";
+const parserBinary = process.env.PIDBA_PARSER_BINARY ?? parser;
+const provider = process.env.PIDBA_PROVIDER ?? "unknown";
+const model = process.env.PIDBA_MODEL ?? "unknown";
+let parserBuild: ParserBuild = parseParserVersion("");
 
 // rebuilt is false when the binary was reused or pinned rather than compiled at start-up, which is
 // the only case where its age is worth putting in front of the user.
-const rebuilt = parserOrigin.startsWith("built from");
+const rebuilt = parserOrigin === "rebuilt from source";
 
-async function readParserVersion(): Promise<string> {
+async function readParserVersion(): Promise<ParserBuild> {
   try {
     const { stdout } = await runFile(parser, ["--version"], { maxBuffer: 1 << 20 });
-    return stdout.split("\n")[0].trim();
+    return parseParserVersion(stdout);
   } catch {
-    return "unknown (the parser did not answer --version; it is older than this launcher)";
+    return parseParserVersion("dba-mongo-parser unknown");
   }
 }
 
 function versionLines(): string[] {
-  return [
+  const build = [parserBuild.builtAt, parserBuild.goVersion, parserBuild.platform].filter(Boolean).join(" · ");
+  const lines = [
     `pidba ${pidbaVersion}`,
-    `  ${parserVersion}`,
-    `  ${parserOrigin || "origin unknown"}`,
-    `  pi ${piVersion}`,
+    `runtime  pi ${piVersion}`,
+    `model    ${provider}/${model}`,
+    `parser   ${parserBuild.version}`,
+    `binary   ${parserBinary}`,
+    `source   ${parserSource}`,
+    `mode     ${parserOrigin || "unknown"}`,
   ];
+  if (build) lines.splice(4, 0, `build    ${build}`);
+  return lines;
+}
+
+function bundleStatus(): string {
+  return dataPath ? `bundle ${basename(dataPath)}` : "bundle not selected";
+}
+
+function installCompactChrome(ctx: ExtensionContext): void {
+  if (ctx.mode !== "tui") return;
+
+  ctx.ui.setHeader((_tui, theme) => ({
+    invalidate() {},
+    render(width: number): string[] {
+      const title = theme.fg("accent", `pidba ${pidbaVersion}`);
+      const purpose = theme.fg("muted", " · local bundle analysis");
+      return [truncateToWidth(title + purpose, width)];
+    },
+  }));
+
+  ctx.ui.setFooter((_tui, theme) => ({
+    invalidate() {},
+    render(width: number): string[] {
+      const usage = ctx.getContextUsage();
+      const context = usage?.percent == null ? "" : ` · ctx ${Math.round(usage.percent)}%`;
+      const line = `${bundleStatus()} · parser ${compactParserVersion(parserBuild)} · ${provider}/${model}${context}`;
+      return [truncateToWidth(theme.fg("muted", line), width)];
+    },
+  }));
 }
 
 type Report = { kind: string; data: Record<string, unknown>; render: string; footer: string };
@@ -66,7 +103,7 @@ function width(): number {
 async function run(command: string, args: string[], signal?: AbortSignal): Promise<Report> {
   if (!dataPath) throw new Error("No bundle selected. Ask the user to include an existing directory path in their message or use /path.");
   try {
-    const { stdout } = await runFile(parser, [command, dataPath, "--json", "--obscure", ...arg("width", width()), ...args], {
+    const { stdout } = await runFile(parser, [command, dataPath, "--json", ...arg("width", width()), ...args], {
       signal,
       maxBuffer: 128 * 1024 * 1024,
     });
@@ -91,11 +128,12 @@ function renderer(title: string, summary: (report: Report) => string) {
     renderCall(_args: object, theme: Theme) {
       return new Text(`${theme.fg("accent", "◆")} ${theme.fg("toolTitle", title)}`, 0, 0);
     },
-    renderResult(toolResult: ToolResult, options: { isPartial: boolean }, theme: Theme) {
-      if (options.isPartial) return new Text(theme.fg("muted", "  parsing…"), 0, 0);
-      if (toolResult.isError || !toolResult.details?.data) return new Text(theme.fg("error", "  ✗ parser failed"), 0, 0);
+    renderResult(toolResult: ToolResult, options: { expanded: boolean; isPartial: boolean }, theme: Theme) {
+      if (options.isPartial) return new Text(theme.fg("muted", "  … parsing"), 0, 0);
+      if (toolResult.isError || !toolResult.details?.data) return new Text(theme.fg("error", "  ✗ failed"), 0, 0);
       const report = toolResult.details.data;
-      return new Text(`${theme.fg("success", `  ✓ ${summary(report)}`)}\n${report.render}`, 0, 0);
+      const line = theme.fg("success", `  ✓ ${summary(report)}`);
+      return new Text(options.expanded && report.render ? `${line}\n${report.render}` : line, 0, 0);
     },
   };
 }
@@ -105,11 +143,7 @@ const windowFlags = {
   to: Type.Optional(Type.String({ description: "RFC3339 end of the window" })),
 };
 
-const mask = new PromptMask();
-
 export default function mongodb(pi: ExtensionAPI) {
-  // What the user types is masked with the same identifiers the parser prints, so a name mentioned
-  // in the conversation and the same name in a report are recognisably one thing to the model.
   pi.on("input", async (event, ctx) => {
     let text = event.text;
     try {
@@ -118,38 +152,30 @@ export default function mongodb(pi: ExtensionAPI) {
       if (selected.path && selected.path !== dataPath) {
         dataPath = selected.path;
         bundleVersion++;
-        mask.load([]);
-        ctx.ui.setStatus("path", `path: ${dataPath}`);
+        ctx.ui.setStatus("bundle", bundleStatus());
       }
     } catch (error) {
       ctx.ui.notify((error as Error).message, "error");
       return { action: "handled" };
     }
-    if (dataPath) text = text.split(dataPath).join("[selected local bundle]");
-    try {
-      const report = await run("aliases", []);
-      mask.load((report.data as unknown as string[]) ?? []);
-    } catch {
-      // An unreadable path is the tools' problem to report; the prompt still gets masked.
-    }
-    return { action: "transform", text: mask.apply(text), images: event.images };
+    return { action: "transform", text, images: event.images };
   });
 
   pi.registerCommand("path", {
     description: "Select or show the local bundle directory: /path /data/mongodb",
     async handler(args, ctx) {
       if (!args.trim()) {
-        ctx.ui.notify(dataPath ?? "Henüz klasör seçilmedi. Problemi klasör yoluyla birlikte yaz.", "info");
+        ctx.ui.notify(dataPath ?? "No bundle selected. Include its directory in your message or use /path.", "info");
         return;
       }
       try {
         const value = args.trim().replace(/^(["'`])(.*)\1$/, "$2");
         const next = directory(value, startCwd);
-        if (next !== dataPath) { dataPath = next; bundleVersion++; mask.load([]); }
-        ctx.ui.setStatus("path", `path: ${dataPath}`);
-        ctx.ui.notify("Veri klasörü seçildi. Şimdi problemi anlatabilirsin.", "info");
+        if (next !== dataPath) { dataPath = next; bundleVersion++; }
+        ctx.ui.setStatus("bundle", bundleStatus());
+        ctx.ui.notify(`Bundle selected: ${dataPath}`, "info");
       } catch {
-        ctx.ui.notify("Klasör bulunamadı veya okunamıyor; yolu kontrol et.", "error");
+        ctx.ui.notify("Directory not found or unreadable. Check the path and try again.", "error");
       }
     },
   });
@@ -174,17 +200,16 @@ export default function mongodb(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setTitle("pidba · MongoDB");
-    ctx.ui.setStatus("path", `path: ${dataPath ?? "problemi klasör yoluyla birlikte yaz"}`);
-    parserVersion = await readParserVersion();
-    // The short form goes in the status bar, where it is visible for the whole session without
-    // being asked for: an answer is only as current as the binary that produced it.
-    ctx.ui.setStatus("version", `pidba ${pidbaVersion} · ${parserVersion.replace(/^dba-mongo-parser /, "parser ").split(",")[0]}`);
+    ctx.ui.setTitle("pidba");
+    ctx.ui.setToolsExpanded(false);
+    ctx.ui.setWorkingMessage("Analyzing");
+    parserBuild = await readParserVersion();
+    installCompactChrome(ctx);
     if (!rebuilt) {
-      ctx.ui.notify(`Parser bu oturumda yeniden derlenmedi (${parserOrigin || "sebep bilinmiyor"}). Eski bir sürüm çalışıyor olabilir — /version`, "warning");
+      ctx.ui.notify(`Parser was not rebuilt for this session (${parserOrigin || "reason unknown"}). It may be stale; use /version for details.`, "warning");
     }
-    if (parserVersion.includes("dev build")) {
-      ctx.ui.notify("Parser sürümsüz derlenmiş (dev build); hangi kodu çalıştırdığı tespit edilemez.", "warning");
+    if (parserBuild.version.includes("dev build") || parserBuild.version === "unknown") {
+      ctx.ui.notify("The parser build is not identifiable. Use /version and rebuild it through the launcher.", "warning");
     }
   });
 
@@ -194,7 +219,7 @@ export default function mongodb(pi: ExtensionAPI) {
   pi.on("before_agent_start", async () => ({
     systemPrompt: `${systemPrompt}
 
-You are running ${parserVersion}, driven by pidba ${pidbaVersion}. If the user asks which version of
+You are running ${parserBuild.raw}, driven by pidba ${pidbaVersion}. If the user asks which version of
 anything they are using, or why an answer differs from one they remember, say this and point them at
 /version; do not guess at a release number or a changelog.
 
@@ -219,7 +244,7 @@ ${dataPath
         ...arg("from", p.from), ...arg("to", p.to),
       ], signal));
     },
-    ...renderer("mongo path report", (report) => {
+    ...renderer("report", (report) => {
       const findings = (report.data.findings as unknown[])?.length ?? 0;
       const shapes = (report.data.slow_queries as unknown[])?.length ?? 0;
       return `${findings} findings · ${shapes} query shapes`;
@@ -234,7 +259,7 @@ ${dataPath
     async execute(_id, _params, signal) {
       return result(await run("inventory", [], signal));
     },
-    ...renderer("mongo inventory", (report) => `${(report.data.ftdc_streams as unknown[])?.length ?? 0} FTDC streams · ${report.data.log_files ?? 0} log files`),
+    ...renderer("inventory", (report) => `${(report.data.ftdc_streams as unknown[])?.length ?? 0} FTDC streams · ${report.data.log_files ?? 0} log files`),
   });
 
   pi.registerTool({
@@ -259,7 +284,7 @@ ${dataPath
         ...(p.overlay ? ["--overlay"] : []),
       ], signal));
     },
-    ...renderer("mongo FTDC metrics", (report) => `${(report.data as unknown as unknown[])?.length ?? 0} metrics charted`),
+    ...renderer("metrics", (report) => `${(report.data as unknown as unknown[])?.length ?? 0} metrics charted`),
   });
 
   pi.registerTool({
@@ -283,7 +308,7 @@ ${dataPath
         ...arg("records", p.records), ...arg("from", p.from), ...arg("to", p.to),
       ], signal));
     },
-    ...renderer("mongo log groups", (report) => `${report.data.total_groups ?? 0} groups from ${(report.data.quality as Record<string, unknown>)?.records_parsed ?? 0} records`),
+    ...renderer("logs", (report) => `${report.data.total_groups ?? 0} groups from ${(report.data.quality as Record<string, unknown>)?.records_parsed ?? 0} records`),
   });
 
   pi.registerTool({
@@ -309,7 +334,7 @@ ${dataPath
         ...arg("from", p.from), ...arg("to", p.to),
       ], signal));
     },
-    ...renderer("mongo slow queries", (report) => {
+    ...renderer("slow queries", (report) => {
       const waits = (report.data.waits as { name?: string; share?: number }[] | undefined) ?? [];
       const lead = waits.find((wait) => wait.name !== "unaccounted" && wait.name !== "cpu");
       const spent = lead ? ` · mostly ${lead.name} ${Math.round((lead.share ?? 0) * 100)}%` : "";
@@ -325,7 +350,7 @@ ${dataPath
     async execute(_id, p, signal) {
       return result(await run("deployment", [...arg("from", p.from), ...arg("to", p.to)], signal));
     },
-    ...renderer("mongo deployment", (report) => {
+    ...renderer("deployment", (report) => {
       const summary = (report.data.summary as Record<string, unknown>) ?? {};
       return `${(report.data.processes as unknown[])?.length ?? 0} processes · ${((summary.versions as string[]) ?? []).join(", ") || "version not logged"}`;
     }),
@@ -344,7 +369,7 @@ ${dataPath
     async execute(_id, p, signal) {
       return result(await run("ddl", [...arg("ns", p.ns), ...arg("kind", p.kind), ...arg("top", p.top), ...arg("from", p.from), ...arg("to", p.to)], signal));
     },
-    ...renderer("mongo catalogue changes", (report) =>
+    ...renderer("catalog changes", (report) =>
       `${(report.data.index_builds as unknown[])?.length ?? 0} index builds · ${(report.data.changes as unknown[])?.length ?? 0} other changes`),
   });
 
@@ -359,6 +384,6 @@ ${dataPath
     async execute(_id, p, signal) {
       return result(await run("health", [...arg("top", p.top), ...arg("from", p.from), ...arg("to", p.to)], signal));
     },
-    ...renderer("mongo logged conditions", (report) => `${(report.data.signals as unknown[])?.length ?? 0} conditions`),
+    ...renderer("health", (report) => `${(report.data.signals as unknown[])?.length ?? 0} conditions`),
   });
 }
