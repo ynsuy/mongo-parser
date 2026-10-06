@@ -15,9 +15,16 @@ export DBA_START_CWD="$PWD"
 # stamped into the binary; the three are printed together because a session is all of them.
 pidba_version="$(node -e 'process.stdout.write(require("'"$root"'/package.json").version ?? "0.0.0")' 2>/dev/null || echo "unknown")"
 pi_version="$(node -e 'process.stdout.write(require("'"$root"'/node_modules/@earendil-works/pi-coding-agent/package.json").version)' 2>/dev/null || echo "unknown")"
+provider="${DBA_PROVIDER:-openai-codex}"
+model="${DBA_MODEL:-gpt-5.5}"
 
-parser_src="${DBA_PARSER_SRC:-$root/../dba-mongo-parser}"
-parser_bin="${DBA_PARSER_BIN:-$root/bin/dba-mongo-parser}"
+parser_src="${MONGO_LOG_PARSER_SRC:-$root/../mongo-log-parser}"
+parser_bin="${MONGO_LOG_PARSER_BIN:-$root/bin/mongo-log-parser}"
+[[ "$parser_src" != /* ]] && parser_src="$DBA_START_CWD/$parser_src"
+[[ "$parser_bin" != /* ]] && parser_bin="$DBA_START_CWD/$parser_bin"
+if [[ -d "$parser_src" ]]; then
+  parser_src="$(cd "$parser_src" && pwd -P)"
+fi
 
 # how the parser binary came to be what it is, for the message below and for the status bar.
 parser_origin=""
@@ -32,62 +39,65 @@ build_parser() {
     # An older parser checkout without the script still builds; it just cannot be identified, and
     # the parser says so itself when asked for its version.
     mkdir -p "$(dirname "$parser_bin")"
-    go -C "$parser_src" build -o "$parser_bin" ./cmd/dba-mongo-parser
+    go -C "$parser_src" build -o "$parser_bin" ./cmd/mongo-log-parser
   fi
 }
 
 prepare_parser() {
-  if [[ -n "${DBA_PARSER_BIN:-}" ]]; then
+  if [[ -n "${MONGO_LOG_PARSER_BIN:-}" ]]; then
     # An explicit binary is used as given and never rebuilt. That is the point of the variable, and
     # it is also the easiest way to end up running something very old without noticing, so it is
     # the one case that always announces itself.
     if [[ ! -x "$parser_bin" ]]; then
-      printf '%s: DBA_PARSER_BIN is set to %s, which is not an executable\n' "$command_name" "$parser_bin" >&2
+      printf '%s: MONGO_LOG_PARSER_BIN is set to %s, which is not an executable\n' "$command_name" "$parser_bin" >&2
       exit 2
     fi
-    parser_origin="pinned by DBA_PARSER_BIN, not rebuilt"
+    parser_origin="pinned binary; source bypassed"
     return
   fi
   if [[ -d "$parser_src" ]]; then
     build_parser
-    parser_origin="built from $parser_src"
+    parser_origin="rebuilt from source"
     return
   fi
   # No source to build from. Reusing whatever is in bin/ used to happen silently, which is exactly
   # how a months-old binary keeps answering questions about today's bundles.
   if [[ -x "$parser_bin" ]]; then
-    parser_origin="REUSED without rebuilding: no parser source at $parser_src"
+    parser_origin="reused existing binary; source missing"
     printf '%s: parser source not found at %s\n' "$command_name" "$parser_src" >&2
     printf '%s: reusing the existing binary %s — it is NOT being rebuilt\n' "$command_name" "$parser_bin" >&2
-    printf '%s: set DBA_PARSER_SRC to the dba-mongo-parser checkout to build a current one\n' "$command_name" >&2
+    printf '%s: set MONGO_LOG_PARSER_SRC to the mongo-log-parser checkout to build a current one\n' "$command_name" >&2
     return
   fi
-  printf '%s: dba-mongo-parser not found; set DBA_PARSER_BIN or DBA_PARSER_SRC\n' "$command_name" >&2
+  printf '%s: mongo-log-parser not found; set MONGO_LOG_PARSER_BIN or MONGO_LOG_PARSER_SRC\n' "$command_name" >&2
   exit 2
 }
 
 parser_version() {
-  "$parser_bin" --version 2>/dev/null | head -1 || echo "dba-mongo-parser unknown"
+  "$parser_bin" --version 2>/dev/null | head -1 || echo "mongo-log-parser unknown"
 }
 
 case "${1:-}" in
   --help|-h)
     printf 'usage: %s [path]\n' "$command_name"
-    printf 'Open a Codex DBA session. You can supply the bundle path in the chat.\n'
-    printf 'First use: /login and select OpenAI Codex.\n\n'
+    printf 'Open a pidba analysis session. You can supply the bundle path in the chat.\n'
+    printf 'First use: /login and select a model provider.\n\n'
     printf '  --version   which build of the launcher, the parser and pi this would run\n\n'
-    printf 'DBA_PARSER_SRC  parser checkout to build from (default: alongside this project)\n'
-    printf 'DBA_PARSER_BIN  use this binary as given and do not rebuild it\n'
+    printf 'MONGO_LOG_PARSER_SRC  parser checkout to build from (default: alongside this project)\n'
+    printf 'MONGO_LOG_PARSER_BIN  use this binary as given and do not rebuild it\n'
+    printf 'DBA_PROVIDER    model provider (default: openai-codex)\n'
     printf 'DBA_MODEL       model to run (default: gpt-5.5)\n'
     exit 0
     ;;
   --version|-v)
     prepare_parser
-    printf 'pidba %s\n' "$pidba_version"
-    printf '  %s\n' "$(parser_version)"
-    printf '  %s\n' "$parser_origin"
-    printf '  pi %s, model %s\n' "$pi_version" "${DBA_MODEL:-gpt-5.5}"
-    printf '  project %s\n' "$root"
+    printf 'pidba   %s\n' "$pidba_version"
+    printf 'runtime pi %s\n' "$pi_version"
+    printf 'model   %s/%s\n' "$provider" "$model"
+    printf 'parser  %s\n' "$(parser_version)"
+    printf 'binary  %s\n' "$parser_bin"
+    printf 'source  %s\n' "$parser_src"
+    printf 'mode    %s\n' "$parser_origin"
     exit 0
     ;;
 esac
@@ -106,16 +116,19 @@ if [[ -n "$data_path" ]]; then
 fi
 
 export PI_CODING_AGENT_DIR="$root/.pi/codex-agent"
-export DBA_OBSCURE=1
 export PI_OFFLINE=1
 export PI_TELEMETRY=0
 export PI_SKIP_VERSION_CHECK=1
 
 prepare_parser
-export DBA_PARSER_BIN="$parser_bin"
+export MONGO_LOG_PARSER_BIN="$parser_bin"
 export PIDBA_VERSION="$pidba_version"
 export PIDBA_PARSER_ORIGIN="$parser_origin"
+export PIDBA_PARSER_SOURCE="$parser_src"
+export PIDBA_PARSER_BINARY="$parser_bin"
 export PIDBA_PI_VERSION="$pi_version"
+export PIDBA_PROVIDER="$provider"
+export PIDBA_MODEL="$model"
 
 cd "$root"
 DBA_DATA_PATH="$data_path" exec "$root/node_modules/.bin/pi" \
@@ -124,8 +137,8 @@ DBA_DATA_PATH="$data_path" exec "$root/node_modules/.bin/pi" \
   --no-session \
   --no-builtin-tools \
   --no-extensions \
-  --provider openai-codex \
-  --model "${DBA_MODEL:-gpt-5.5}" \
+  --provider "$provider" \
+  --model "$model" \
   --thinking medium \
   --extension "$root/.pi/extensions/mongodb.ts" \
   --theme "$root/.pi/themes/dba.json" \

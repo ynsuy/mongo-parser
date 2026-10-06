@@ -1,8 +1,10 @@
 # pidba
 
-A Pi terminal agent for MongoDB logs and FTDC data. It reads nothing itself: every answer comes from
-[`dba-mongo-parser`](https://github.com/ynsuy/dba-mongo-parser), a standalone Go tool that parses the bundle and draws its
-own tables and charts. The agent runs the parser, shows what it drew, and reasons about it in words.
+A Pi terminal agent for MongoDB support bundles. It reads nothing itself: every answer comes from
+`mongo-log-parser`, the Go tool in the directory beside this one, which reads the bundle — logs, log
+exports, FTDC, shell printouts and configs, in any mix of directories and archives — once into a
+local store and draws its own tables and charts. The agent runs it, shows what it drew, and reasons
+about it in words.
 
 ```bash
 npm install
@@ -18,7 +20,7 @@ See [OpenAI authentication documentation](https://developers.openai.com/codex/au
 Then describe the problem with the directory in the same message:
 
 ```text
-"/Users/me/Downloads/mongo bundle" içinde sorgular yavaşlamış. Sebebini araştır.
+Investigate why queries slowed down in "/Users/me/Downloads/mongo bundle".
 ```
 
 Absolute paths, `~/...`, `./...`, and `../...` are recognized locally. Quote paths containing
@@ -32,25 +34,29 @@ query shapes. It distinguishes supporting evidence from an unconfirmed cause.
 
 ## Codex model
 
-The default is the installed provider catalog's `gpt-5.5`, with medium reasoning. Override it with
-`DBA_MODEL=<model-id> pidba`, or select a model with `/model`. Credentials live in the separate,
-git-ignored `.pi/codex-agent` directory. Ollama is not needed.
+The default is `openai-codex/gpt-5.5`, with medium reasoning. Override it with
+`DBA_PROVIDER=<provider-id> DBA_MODEL=<model-id> pidba`, or select a model with `/model`.
+Credentials live in the separate, git-ignored `.pi/codex-agent` directory. Ollama is not needed.
 
-**Model requests go to OpenAI.** The parser runs locally with identity masking enabled; the
-selected directory is replaced locally before the message is sent. Masking is partial, and pasted
-attachments or unrecognized names may contain identifying information. `--offline` disables Pi
-startup update checks; it does not disable model networking.
+**Model requests go to OpenAI, and the bundle's contents go with them.** The parser runs locally,
+but what it prints — hostnames, namespaces, paths, application names, log text — is sent to the
+selected model as written. There is no masking layer: an earlier version of this agent replaced
+those names with local identifiers, and that was removed deliberately. Point this at a customer
+bundle only where sending that customer's operational data to OpenAI is something you are allowed
+to do; for anything else, run `mongo-log-parser` yourself in a terminal, or switch the session to a
+local model. `--offline` disables Pi startup update checks; it does not disable model networking.
 
-The launcher builds the parser from `../dba-mongo-parser` into this project's `bin/` directory, with
-a version stamped into it. Override the source with `DBA_PARSER_SRC`, or use an existing executable
-with `DBA_PARSER_BIN`.
+The launcher builds the parser from `../mongo-log-parser` into this project's `bin/` directory, with
+a version stamped into it. Override the source with `MONGO_LOG_PARSER_SRC`, or use an existing
+executable with `MONGO_LOG_PARSER_BIN`.
 
-`pidba --version` prints what a session would run — the launcher, the parser build and its
-timestamp, where that binary came from, and pi — without starting one. The same three are in the
-status bar of every session and behind `/version`.
+`pidba --version` prints what a session would run — the launcher and Pi versions, model, full
+parser build and timestamp, parser binary path, parser source checkout and build mode — without
+starting one. The compact terminal chrome keeps the pidba and parser versions visible; `/version`
+shows the full details and paths inside a session.
 
 There are exactly two ways to end up running a parser that was not built at start-up: pinning one
-with `DBA_PARSER_BIN`, or pointing `DBA_PARSER_SRC` somewhere that does not exist, in which case a
+with `MONGO_LOG_PARSER_BIN`, or pointing `MONGO_LOG_PARSER_SRC` somewhere that does not exist, in which case a
 binary left in `bin/` from an earlier run is reused. Both used to be silent. Both now say so on
 stderr at launch and as a warning in the session, because a months-old binary answering questions
 about today's bundle looks exactly like a current one.
@@ -67,7 +73,10 @@ Building requires Go. The agent has only the parser tools listed below, with no 
 | `mongo_ddl` | Index builds with their durations and outcomes, and the drops, creates, renames and FCV changes around them. |
 | `mongo_health` | The conditions the server logs at severity I and never ranks: authentication failures, write conflicts, heartbeat failures, connection churn, stale routing tables, storage operations that took too long. |
 | `mongo_logs` | Groups every structured log line; a group id shows the lines themselves with their attributes. Filter by category, minimum severity, node or substring. |
-| `mongo_inventory` | Lists the FTDC streams and log files the bundle holds. |
+| `mongo_coverage` | Which nodes are in the bundle, what each one's logs and FTDC cover in time, and the blind spots — stretches where a node wrote nothing, labelled with what they opened and closed with. The first call on an unfamiliar bundle. |
+| `mongo_lines` | The log lines themselves, verbatim, filtered by node, time, severity, component, log id, connection, message or an attribute test. What every other number is made of. |
+| `mongo_storage` | How much data there is and how full the mounts holding it are. |
+| `mongo_shell` | What the collector's one-off printouts say: serverStatus, rs.status(), hostInfo, getCmdLineOpts. |
 
 A slow operation and a busy one print the same duration. `mongo_slow` says which it was: when the
 time went on write concern, flow control or a remote shard, the query is not the problem, and the
@@ -88,49 +97,30 @@ listed first in the legend keeps the cell.
 From a terminal the same thing is:
 
 ```bash
-../dba-mongo-parser/bin/dba-mongo-parser metrics /data/mongodb --source all \
-  --metric serverStatus/wiredTiger/cache/bytes read into cache --overlay
+../mongo-log-parser/bin/mongo-log-parser metrics /data/mongodb --source all \
+  --metric 'wiredTiger/cache/bytes read into cache' --overlay
 ```
 
-For looking around yourself rather than asking, the parser has an interactive mode the agent does
-not use: `dba-mongo-parser explore <path> --source all` opens the metrics in the terminal, where
-`+`/`-` zoom the window, the arrows pan it, `j`/`k` change metric and `?` lists the keys.
+## What reaches the model
 
-## Local identities
+Everything the parser prints for a question the agent asks: node names, namespaces, paths,
+application names, query shapes with their command documents, and log message text. What you type
+reaches it unchanged too. Nothing is masked or redacted on the way.
 
-Every parser call runs with `--obscure`, which masks supported identity fields with identifiers
-(`source-002`, `ns-004`, `node-011`) wherever the parser prints them, findings included. This is
-partial masking: free-form log attributes, error text and pasted attachments may still contain
-customer information. Rendered reports are
-sent to the selected Codex model through OpenAI. The mapping lives on this machine, under
-`~/.local/state/dba-mongo-parser/`, and is keyed by path: the same collection keeps the same id
-across calls and sessions, and the model can hand an id back wherever a name is taken. `/aliases`
-shows the mapping in the terminal, and `/aliases ns-004` looks up just the one an answer mentioned.
-Terms work in both directions, so a collection you already have in mind finds the identifier the
-model was given for it.
-
-What you type is masked with the same identifiers before the model sees it. Only names that carry a
-separator — a namespace, a host, a path — are substituted into your sentence, so an ordinary word
-that happens to be the name of the directory you passed does not rewrite the question you asked.
-
-Masking is not something the agent opts into. `scripts/pidba` exports `DBA_OBSCURE=1`, and the
-parser obeys that over anything on its command line: no edit to an extension can put a real
-hostname, path or namespace in front of the model. Running the parser yourself, without that
-variable, shows the real names — that is the difference between the two ways in.
-
-Limits worth knowing: attachments you paste are not anonymized, and an id says nothing about what it
-stands for, so the model cannot reason about a name it was never given.
+The bundle itself never leaves the machine — the parser reads it locally and the model only ever
+sees the answers — but those answers are the customer's operational data. Decide once, per bundle,
+whether that is allowed, rather than per question.
 
 ## Scope
 
-Structured JSON logs only (MongoDB 4.4 and later). MySQL and PostgreSQL adapters are not written.
-The parser screens; it does not diagnose. A finding is a place to look, not a cause.
+Structured JSON logs (MongoDB 4.4 and later) and the Kubernetes/rsyslog exports of them; the 4.2
+text format is recognised and not yet read. MySQL and PostgreSQL adapters are not written. The
+parser screens; it does not diagnose. A finding is a place to look, not a cause.
 
 Query hashes are copied verbatim from the log (`queryHash` or `planCacheShapeHash`); they are never
-aliased or generated. `not logged` identifies a namespace/operation/plan group without a server hash.
+generated. `not logged` identifies a namespace/operation/plan group without a server hash.
 Ask the agent to filter by a reported query hash, or use the parser directly:
 
 ```bash
-../dba-mongo-parser/bin/dba-mongo-parser slow /data/mongodb --query-hash ABC123EF
-../dba-mongo-parser/bin/dba-mongo-parser aliases /data/mongodb ns-004
+../mongo-log-parser/bin/mongo-log-parser slow /data/mongodb --query-hash ABC123EF
 ```

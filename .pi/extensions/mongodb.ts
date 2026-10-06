@@ -12,14 +12,14 @@ import { compactParserVersion, parseParserVersion, type ParserBuild } from "../l
 const runFile = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 // The parser is a standalone tool; this extension only drives it and shows what it drew.
-const parser = process.env.DBA_PARSER_BIN ?? resolve(projectRoot, "../dba-mongo-parser/bin/dba-mongo-parser");
+const parser = process.env.MONGO_LOG_PARSER_BIN ?? resolve(projectRoot, "../mongo-log-parser/bin/mongo-log-parser");
 let dataPath = process.env.DBA_DATA_PATH || undefined;
 const startCwd = process.env.DBA_START_CWD ?? process.cwd();
 let bundleVersion = dataPath ? 1 : 0;
 const systemPrompt = readFileSync(resolve(projectRoot, ".pi/SYSTEM.md"), "utf8").trim();
 
 // Which build is answering. The launcher rebuilds the parser on every start, so the binary is
-// usually current — but it has two ways of not being (a pinned DBA_PARSER_BIN, or a missing source
+// usually current — but it has two ways of not being (a pinned MONGO_LOG_PARSER_BIN, or a missing source
 // tree), and a session started from an arbitrary directory gives no clue which happened. The
 // launcher passes what it did in PIDBA_PARSER_ORIGIN, and the parser knows what it is.
 const pidbaVersion = process.env.PIDBA_VERSION ?? "unknown";
@@ -40,7 +40,7 @@ async function readParserVersion(): Promise<ParserBuild> {
     const { stdout } = await runFile(parser, ["--version"], { maxBuffer: 1 << 20 });
     return parseParserVersion(stdout);
   } catch {
-    return parseParserVersion("dba-mongo-parser unknown");
+    return parseParserVersion("mongo-log-parser unknown");
   }
 }
 
@@ -86,7 +86,7 @@ function installCompactChrome(ctx: ExtensionContext): void {
   }));
 }
 
-type Report = { kind: string; data: Record<string, unknown>; render: string; footer: string };
+type Report = { command: string; bundle: string; data: Record<string, unknown>; render: string };
 
 function arg(name: string, value: unknown): string[] {
   return value === undefined || value === null || value === "" ? [] : [`--${name}`, String(value)];
@@ -96,10 +96,9 @@ function width(): number {
   return Math.max(80, Math.min(200, (process.stdout.columns ?? 120) - 4));
 }
 
-// Every call runs the parser with --obscure, so hostnames, paths and namespaces never reach the
-// model; the ids it sees are stable across calls and can be handed straight back as arguments.
-// The launcher also sets DBA_OBSCURE, which the parser obeys over any flag: if this line were ever
-// edited away, the parser would still refuse to hand back a real name on the agent's behalf.
+// The parser reads the bundle into a local store on the first call and answers from it afterwards,
+// so the first question of a session is slower than the rest. Names are not masked: whatever the
+// bundle holds reaches the model as it was written.
 async function run(command: string, args: string[], signal?: AbortSignal): Promise<Report> {
   if (!dataPath) throw new Error("No bundle selected. Ask the user to include an existing directory path in their message or use /path.");
   try {
@@ -117,8 +116,7 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
 // The parser already drew the tables and charts; the model relays that text instead of inventing
 // a rendering of its own, and reads the structured data beside it when it needs numbers.
 function result(report: Report) {
-  const text = report.footer ? `${report.render}\n\n${report.footer}` : report.render;
-  return { content: [{ type: "text" as const, text }], details: { data: report } };
+  return { content: [{ type: "text" as const, text: report.render }], details: { data: report } };
 }
 
 type ToolResult = { isError?: boolean; details?: { data?: Report } };
@@ -139,9 +137,18 @@ function renderer(title: string, summary: (report: Report) => string) {
 }
 
 const windowFlags = {
-  from: Type.Optional(Type.String({ description: "RFC3339 start of the window" })),
-  to: Type.Optional(Type.String({ description: "RFC3339 end of the window" })),
+  from: Type.Optional(Type.String({ description: "Start of the window, UTC: 2026-01-15T10:00:00Z, \"2026-01-15 10:00\", \"01-15 10:00\", or 10:00 when the bundle covers one day" })),
+  to: Type.Optional(Type.String({ description: "End of the window, same forms as from" })),
+  around: Type.Optional(Type.String({ description: "A moment to centre the window on, same forms as from" })),
+  window: Type.Optional(Type.String({ description: "Width of the around window, e.g. 20m or 2h. 30m by default" })),
+  last: Type.Optional(Type.String({ description: "A window this long ending at the last thing the bundle recorded, e.g. 2h" })),
 };
+
+// windowArgs turns those into flags; every command takes the same ones.
+function windowArgs(p: { from?: string; to?: string; around?: string; window?: string; last?: string }): string[] {
+  return [...arg("from", p.from), ...arg("to", p.to), ...arg("around", p.around),
+          ...arg("window", p.window), ...arg("last", p.last)];
+}
 
 export default function mongodb(pi: ExtensionAPI) {
   pi.on("input", async (event, ctx) => {
@@ -180,18 +187,6 @@ export default function mongodb(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("aliases", {
-    description: "Look up what a local identifier stands for: /aliases, or /aliases ns-004 to ask about one",
-    async handler(args, ctx) {
-      // An answer names ns-004; this is where that becomes a collection again. Terms work in both
-      // directions, so a name you already have finds the identifier the model was given for it.
-      const terms = args.trim().split(/\s+/).filter(Boolean);
-      const report = await run("aliases", terms);
-      const lines = (report.data as unknown as string[]) ?? [];
-      await ctx.ui.select(terms.length ? `Local identifiers · ${terms.join(" ")}` : "Local identifiers", lines);
-    },
-  });
-
   pi.registerCommand("version", {
     description: "Which build of the launcher, the parser and pi this session is running",
     async handler(_args, ctx) {
@@ -214,7 +209,7 @@ export default function mongodb(pi: ExtensionAPI) {
   });
 
   // Pi's own prompt introduces a coding assistant with file and shell tools. This agent has
-  // neither — every answer comes from dba-mongo-parser through the mongo_* tools — so the prompt is
+  // neither — every answer comes from mongo-log-parser through the mongo_* tools — so the prompt is
   // replaced rather than appended to, and SYSTEM.md is the whole of it.
   pi.on("before_agent_start", async () => ({
     systemPrompt: `${systemPrompt}
@@ -241,7 +236,7 @@ ${dataPath
     async execute(_id, p, signal) {
       return result(await run("report", [
         ...arg("only", (p.only ?? []).join(",")), ...arg("top", p.top), ...arg("height", p.height),
-        ...arg("from", p.from), ...arg("to", p.to),
+        ...windowArgs(p),
       ], signal));
     },
     ...renderer("report", (report) => {
@@ -252,14 +247,18 @@ ${dataPath
   });
 
   pi.registerTool({
-    name: "mongo_inventory",
-    label: "MongoDB path inventory",
-    description: "List what the bundle holds: FTDC streams and how many log files there are. Call this first to learn the stream identifiers other tools take.",
+    name: "mongo_coverage",
+    label: "MongoDB bundle coverage",
+    description: "What the bundle actually holds, and what it does not: every node found, what each one's logs and FTDC cover in time, which nodes are named by what evidence, and the blind spots — stretches where a node wrote no log line at all, each one labelled with what it opened and closed with, so a gap left by a crash reads differently from one left by a missing rotation. Call this first. Every other answer is bounded by what this reports: a question about a window nobody logged has no answer, and a count that looks low is often a log that was not collected rather than an event that did not happen.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      return result(await run("inventory", [], signal));
+      return result(await run("coverage", [], signal));
     },
-    ...renderer("inventory", (report) => `${(report.data.ftdc_streams as unknown[])?.length ?? 0} FTDC streams · ${report.data.log_files ?? 0} log files`),
+    ...renderer("coverage", (report) => {
+      const nodes = (report.data as Record<string, unknown>).nodes as unknown[] | undefined;
+      const blind = (report.data as Record<string, unknown>).blind_spots as unknown[] | undefined;
+      return `${nodes?.length ?? 0} nodes · ${blind?.length ?? 0} blind spots`;
+    }),
   });
 
   pi.registerTool({
@@ -267,7 +266,7 @@ ${dataPath
     label: "MongoDB FTDC metrics",
     description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them and the parser ranks the performance-relevant ones (tickets, queues, cache, latency, opcounters, cpu, disk) by importance and by what moved. Name several sources to compare nodes: each stream is read over the same window and gets its own colour, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
     parameters: Type.Object({
-      sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Stream identifiers from mongo_inventory; several to compare nodes, or [\"all\"] for every stream. The only stream by default." })),
+      sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
       metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*" })),
       overlay: Type.Optional(Type.Boolean({ description: "Draw every stream of a metric on one chart, a colour per stream, instead of a chart each" })),
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics to rank when none are named" })),
@@ -280,7 +279,7 @@ ${dataPath
       const metrics = (p.metrics ?? []).flatMap((metric) => ["--metric", metric]);
       return result(await run("metrics", [
         ...sources, ...metrics, ...arg("top", p.top), ...arg("height", p.height),
-        ...arg("bin", p.bin), ...arg("from", p.from), ...arg("to", p.to),
+        ...arg("bin", p.bin), ...windowArgs(p),
         ...(p.overlay ? ["--overlay"] : []),
       ], signal));
     },
@@ -295,7 +294,7 @@ ${dataPath
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many groups to show" })),
       category: Type.Optional(Type.String({ description: "slow_query, election, initial_sync, recovery, replication, sharding, ddl, storage, network, authentication, query or other" })),
       severity: Type.Optional(Type.String({ description: "Keep this severity and worse: F, E, W or I" })),
-      source: Type.Optional(Type.String({ description: "Source identifier from an earlier result: only the groups seen on that node" })),
+      source: Type.Optional(Type.String({ description: "Node name from mongo_coverage: only the groups seen on that node" })),
       contains: Type.Optional(Type.String({ description: "Only the groups whose message contains this text" })),
       group: Type.Optional(Type.String({ description: "Group id from an earlier result: shows the lines themselves instead of the summary" })),
       records: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "How many lines to show for a group" })),
@@ -305,7 +304,7 @@ ${dataPath
       return result(await run("logs", [
         ...arg("top", p.top), ...arg("category", p.category), ...arg("severity", p.severity),
         ...arg("source", p.source), ...arg("contains", p.contains), ...arg("group", p.group),
-        ...arg("records", p.records), ...arg("from", p.from), ...arg("to", p.to),
+        ...arg("records", p.records), ...windowArgs(p),
       ], signal));
     },
     ...renderer("logs", (report) => `${report.data.total_groups ?? 0} groups from ${(report.data.quality as Record<string, unknown>)?.records_parsed ?? 0} records`),
@@ -314,11 +313,11 @@ ${dataPath
   pi.registerTool({
     name: "mongo_slow",
     label: "MongoDB slow queries",
-    description: "Rank slow query shapes by the total time they cost the server, with count, average, p95 and maximum duration, documents and keys examined, inefficiency (documents read per document returned), bytes read, and what each shape mostly waited for. Under the table, a breakdown of where the time went across the whole workload: flow control, write concern, lock acquire, ticket queue, storage read, remote shards, cpu, and what the log did not account for. A slow operation that waited and one that did work print the same duration and are different problems, so read the breakdown before blaming a query. Naming a filter — ns, plan, query_hash or waited_on — also adds a drill-down for the costliest shape it kept: a duration chart (min, average and worst per bin), an executions chart, the full distribution of every measure with min, average, p50, p95, p99, max and total, and the slowest real logged executions with the command document each one ran. Under masking those commands keep their field names and have every value replaced by its type, which is what an index decision depends on and is safe to reason about. That is the view to use once the ranking has told you which shape to look at, because a single average cannot tell an operation that is reliably slow from one that is usually fine with a bad tail. Query hashes are the original logged values, never aliases. Rows without a hash are namespace/operation/plan groups, not known query shapes.",
+    description: "Rank slow query shapes by the total time they cost the server, with count, average, p95 and maximum duration, documents and keys examined, inefficiency (documents read per document returned), bytes read, and what each shape mostly waited for. Under the table, a breakdown of where the time went across the whole workload: flow control, write concern, lock acquire, ticket queue, storage read, remote shards, cpu, and what the log did not account for. A slow operation that waited and one that did work print the same duration and are different problems, so read the breakdown before blaming a query. Naming a filter — ns, plan, query_hash or waited_on — also adds a drill-down for the costliest shape it kept: a duration chart (min, average and worst per bin), an executions chart, the full distribution of every measure with min, average, p50, p95, p99, max and total, and the slowest real logged executions with the command document each one ran. That is the view to use once the ranking has told you which shape to look at, because a single average cannot tell an operation that is reliably slow from one that is usually fine with a bad tail. Query hashes are the original logged values. Rows without a hash are namespace/operation/plan groups, not known query shapes.",
     parameters: Type.Object({
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many shapes to show" })),
       plan: Type.Optional(Type.String({ description: "COLLSCAN, IXSCAN, IDHACK, COUNT or EOF" })),
-      ns: Type.Optional(Type.String({ description: "Namespace identifier from an earlier result" })),
+      ns: Type.Optional(Type.String({ description: "Namespace, e.g. shop.orders" })),
       op: Type.Optional(Type.String({ description: "Only these operations: a command name (find, aggregate, insert, update, delete, getMore, findAndModify), a comma-separated list of them, or a group: writes, reads, ddl" })),
       query_hash: Type.Optional(Type.String({ description: "Exact queryHash or planCacheShapeHash from the log" })),
       waited_on: Type.Optional(Type.String({ description: "Keep only the shapes whose biggest wait is this: flow control, write concern, lock acquire, ticket queue, storage read or remote shards" })),
@@ -331,7 +330,7 @@ ${dataPath
         ...arg("top", p.top), ...arg("plan", p.plan), ...arg("ns", p.ns), ...arg("op", p.op),
         ...arg("query-hash", p.query_hash), ...arg("waited-on", p.waited_on),
         ...arg("examples", p.examples), ...(p.no_detail ? ["--no-detail"] : []),
-        ...arg("from", p.from), ...arg("to", p.to),
+        ...windowArgs(p),
       ], signal));
     },
     ...renderer("slow queries", (report) => {
@@ -343,12 +342,66 @@ ${dataPath
   });
 
   pi.registerTool({
+    name: "mongo_lines",
+    label: "MongoDB log lines",
+    description: "The log lines themselves, exactly as the server wrote them, filtered by node, time, severity, component, log id, connection or thread, message text, or an attribute test. This is what every other number here is made of: use it to confirm a finding before acting on it, to read what surrounds a moment (around plus window), or to follow one connection through a failure. Prefer an attribute test over a text search when the field is known — attr: [\"ns=shop.orders\"], [\"durationMillis?\"], [\"errName~Stale\"] — and ask for count when the question is how many rather than which ones.",
+    parameters: Type.Object({
+      node: Type.Optional(Type.String({ description: "Node name or part of one; comma-separated for several" })),
+      sev: Type.Optional(Type.String({ description: "Severities, comma-separated: F, E, W, I, D1..D5. W+ means W and worse, E+ means E and worse" })),
+      comp: Type.Optional(Type.String({ description: "Components, comma-separated: NETWORK, REPL, COMMAND, STORAGE, CONTROL ..." })),
+      id: Type.Optional(Type.String({ description: "Log ids, comma-separated, e.g. 51803 for a slow operation" })),
+      ctx: Type.Optional(Type.String({ description: "Thread or connection, e.g. conn12345" })),
+      msg: Type.Optional(Type.String({ description: "Text in the message, case-insensitive" })),
+      grep: Type.Optional(Type.String({ description: "Text anywhere in the line, case-insensitive" })),
+      attr: Type.Optional(Type.Array(Type.String(), { maxItems: 8, description: "Attribute tests: path=value, path~part, or path? for present" })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "How many lines to show" })),
+      newest: Type.Optional(Type.Boolean({ description: "Newest first" })),
+      count: Type.Optional(Type.Boolean({ description: "Only count the matching lines, by node" })),
+      ...windowFlags,
+    }),
+    async execute(_id, p, signal) {
+      const attrs = (p.attr ?? []).flatMap((test) => ["--attr", test]);
+      return result(await run("lines", [
+        ...arg("node", p.node), ...arg("sev", p.sev), ...arg("comp", p.comp), ...arg("id", p.id),
+        ...arg("ctx", p.ctx), ...arg("msg", p.msg), ...arg("grep", p.grep), ...attrs,
+        ...arg("limit", p.limit), ...(p.newest ? ["--newest"] : []), ...(p.count ? ["--count"] : []),
+        ...windowArgs(p),
+      ], signal));
+    },
+    ...renderer("log lines", (report) => `${(report.data as Record<string, unknown>).matched ?? 0} matching lines`),
+  });
+
+  pi.registerTool({
+    name: "mongo_storage",
+    label: "MongoDB data size",
+    description: "How much data there is and where it sits: the size of each mount the server's files are on, how full it is, and what the collector recorded for them, together with the index rebuilds that would have to re-read it. Disk that is nearly full explains a class of failures nothing else in the logs names.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, signal) {
+      return result(await run("storage", [], signal));
+    },
+    ...renderer("storage", () => "data sizes"),
+  });
+
+  pi.registerTool({
+    name: "mongo_shell",
+    label: "MongoDB shell printouts",
+    description: "What the one-off shell outputs in the bundle say: serverStatus, rs.status(), hostInfo, getCmdLineOpts and the rest, as the collector captured them. These are a single moment, not a history — the moment the bundle was taken — so they answer what the machine and the set looked like then, which the logs never state outright. Call with no name to list what the bundle holds.",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Which printout to read, e.g. serverstatus, rs_status, host_info, getcmdlineopts" })),
+    }),
+    async execute(_id, p, signal) {
+      return result(await run("shell", p.name ? [p.name] : [], signal));
+    },
+    ...renderer("shell output", (report) => String((report.data as Record<string, unknown>).kind ?? "shell outputs")),
+  });
+
+  pi.registerTool({
     name: "mongo_deployment",
     label: "MongoDB deployment",
     description: "What was actually running: per process the role (mongod, mongos, shard server or config server), the version it is on now and the ones it was on before, when it last started, storage engine, WiredTiger cache size, replica set, whether authorization was on, how many times it started inside the window, and whether it ever came up after an unclean shutdown. Under the table, the version each process came up on at each restart in order — which is what separates a finished upgrade from one that stalled halfway or was rolled back, and a set of version strings cannot. All of it is written once at startup, so a bundle whose logs were rotated past the last restart reports that instead of a number. Call this before reading any other figure: a queue depth means one thing on a 4 GB cache and another on 200 GB, and a counter that reset at a restart is not a counter.",
     parameters: Type.Object({ ...windowFlags }),
     async execute(_id, p, signal) {
-      return result(await run("deployment", [...arg("from", p.from), ...arg("to", p.to)], signal));
+      return result(await run("deployment", windowArgs(p), signal));
     },
     ...renderer("deployment", (report) => {
       const summary = (report.data.summary as Record<string, unknown>) ?? {};
@@ -361,13 +414,13 @@ ${dataPath
     label: "MongoDB catalogue changes",
     description: "Index builds and catalogue changes with their timing: every build followed from the line that started it to the line that ended it, with how long it ran and whether it completed, failed, was aborted or never logged a completion — and beside them the drops, creates, renames, collMods, shardCollections and featureCompatibilityVersion changes. A build or a drop that overlapped a bad window is the cheapest explanation there is, and it appears in no metric. Filter by namespace identifier or by kind.",
     parameters: Type.Object({
-      ns: Type.Optional(Type.String({ description: "Namespace identifier from an earlier result" })),
+      ns: Type.Optional(Type.String({ description: "Namespace, e.g. shop.orders" })),
       kind: Type.Optional(Type.String({ description: "One kind only, e.g. \"index build\", \"drop collection\", \"drop index\", \"shard collection\"" })),
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many rows of each table to show" })),
       ...windowFlags,
     }),
     async execute(_id, p, signal) {
-      return result(await run("ddl", [...arg("ns", p.ns), ...arg("kind", p.kind), ...arg("top", p.top), ...arg("from", p.from), ...arg("to", p.to)], signal));
+      return result(await run("ddl", [...arg("ns", p.ns), ...arg("kind", p.kind), ...arg("top", p.top), ...windowArgs(p)], signal));
     },
     ...renderer("catalog changes", (report) =>
       `${(report.data.index_builds as unknown[])?.length ?? 0} index builds · ${(report.data.changes as unknown[])?.length ?? 0} other changes`),
@@ -382,7 +435,7 @@ ${dataPath
       ...windowFlags,
     }),
     async execute(_id, p, signal) {
-      return result(await run("health", [...arg("top", p.top), ...arg("from", p.from), ...arg("to", p.to)], signal));
+      return result(await run("health", [...arg("top", p.top), ...windowArgs(p)], signal));
     },
     ...renderer("health", (report) => `${(report.data.signals as unknown[])?.length ?? 0} conditions`),
   });
