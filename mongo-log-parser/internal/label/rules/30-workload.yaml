@@ -1,0 +1,182 @@
+pack: workload
+description: >-
+  What clients asked the server to do, and how long it took.
+
+rules:
+
+  - name: latency.reads
+    title: "Read latency"
+    doc: >-
+      Average milliseconds per read operation over each minute, from opLatencies: every
+      microsecond spent on reads in the minute over every read that finished in it. Tailable
+      getMores — a secondary or a change stream waiting for new oplog entries — count as reads and
+      can hold this up on a healthy primary, so read it beside the slow query log. Minutes with
+      fewer than sixty reads are left out.
+    signal:
+      mode: rate
+      unit: "ms"
+      scale: 0.001
+      min_den: 60
+      num: ["serverStatus/opLatencies/reads/latency"]
+      den: ["serverStatus/opLatencies/reads/ops"]
+    levels: &latency_levels
+      - {name: fast, down: [1, 3]}
+      - {name: normal, band: [1, 3, 10, 20]}
+      - {name: slow, band: [10, 20, 50, 100]}
+      - {name: very_slow, up: [50, 100]}
+    elevated: 50
+    min_change: 5
+    pairs_with: [tickets.read.scarce, query.targeting, cache.over_trigger, disk.read_await]
+
+  - name: latency.writes
+    title: "Write latency"
+    doc: >-
+      Average milliseconds per write operation over each minute, from opLatencies. Minutes with
+      fewer than sixty writes are left out.
+    signal:
+      mode: rate
+      unit: "ms"
+      scale: 0.001
+      min_den: 60
+      num: ["serverStatus/opLatencies/writes/latency"]
+      den: ["serverStatus/opLatencies/writes/ops"]
+    levels: *latency_levels
+    elevated: 50
+    min_change: 5
+    pairs_with: [tickets.write.scarce, cache.dirty_over_trigger, flow.throttled, repl.majority_lag]
+
+  - name: latency.commands
+    title: "Command latency"
+    doc: >-
+      Average milliseconds per command over each minute, from opLatencies: everything that is not a
+      CRUD read or write, aggregate included on most versions. Minutes with fewer than sixty
+      commands are left out.
+    signal:
+      mode: rate
+      unit: "ms"
+      scale: 0.001
+      min_den: 60
+      num: ["serverStatus/opLatencies/commands/latency"]
+      den: ["serverStatus/opLatencies/commands/ops"]
+    levels: *latency_levels
+    elevated: 50
+    min_change: 5
+    pairs_with: [tickets.read.scarce, query.targeting]
+
+  - name: ops.total
+    title: "Operations a second"
+    doc: >-
+      Every operation the server ran a second: queries, getMores, inserts, updates, deletes and
+      commands. Shape only: a step is a new workload, a periodic burst a job or a batch.
+    signal:
+      mode: rate
+      unit: "ops/s"
+      num: ["serverStatus/opcounters/query", "serverStatus/opcounters/getmore", "serverStatus/opcounters/insert",
+            "serverStatus/opcounters/update", "serverStatus/opcounters/delete", "serverStatus/opcounters/command"]
+    min_change: 50
+    pairs_with: [ops.writes, connections.current]
+
+  - name: ops.writes
+    title: "Writes a second"
+    doc: >-
+      Inserts, updates and deletes a second. A burst of writes is what fills the dirty cache and
+      stretches checkpoints a few minutes later.
+    signal:
+      mode: rate
+      unit: "ops/s"
+      num: ["serverStatus/opcounters/insert", "serverStatus/opcounters/update", "serverStatus/opcounters/delete"]
+    min_change: 50
+    pairs_with: [cache.dirty, checkpoint.duration]
+
+  - name: query.targeting
+    title: "Documents examined per document returned"
+    doc: >-
+      Documents scanned for every document returned, across the server, over each minute. Near 1
+      queries are well indexed; in the hundreds or thousands something is scanning — a COLLSCAN or
+      an index that does not cover the filter. The slow query log names which shape. Minutes that
+      returned fewer than sixty documents are left out.
+    signal:
+      mode: rate
+      unit: "ratio"
+      min_den: 60
+      num: ["serverStatus/metrics/queryExecutor/scannedObjects"]
+      den: ["serverStatus/metrics/document/returned"]
+    levels:
+      - {name: efficient, down: [2, 10]}
+      - {name: loose, band: [2, 10, 50, 100]}
+      - {name: scanning, band: [50, 100, 500, 1000]}
+      - {name: very_poor, up: [500, 1000]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [query.collscans, cache.read_in, cpu.busy]
+
+  - name: query.collscans
+    title: "Collection scans"
+    doc: >-
+      Queries a second that read a whole collection (4.4 and later). Any steady rate on a large
+      collection is a missing index; a burst is a report or a job.
+    since: "4.4"
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["serverStatus/metrics/queryExecutor/collectionScans/total"]
+    levels:
+      - {name: none, down: [0.01, 0.1]}
+      - {name: some, band: [0.01, 0.1, 1, 10]}
+      - {name: many, up: [1, 10]}
+    elevated: 1
+    min_change: 0.5
+    pairs_with: [query.targeting, cache.read_in]
+
+  - name: query.in_memory_sorts
+    title: "In-memory sorts"
+    doc: >-
+      Operations a second that sorted in memory because no index gave the order (scanAndOrder).
+      They cost CPU and memory and fail past the sort limit.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["serverStatus/metrics/operation/scanAndOrder"]
+    min_change: 1
+    pairs_with: [query.targeting, memory.heap_outside_cache]
+
+  - name: writes.conflicts
+    title: "Write conflicts"
+    doc: >-
+      Write conflicts a second: two operations updating the same document at once, one retrying. A
+      burst means hot documents — a counter, a queue collection, a status field everyone updates.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["serverStatus/metrics/operation/writeConflicts"]
+    levels:
+      - {name: rare, down: [0.1, 1]}
+      - {name: some, band: [0.1, 1, 10, 50]}
+      - {name: heavy, up: [10, 50]}
+    elevated: 10
+    min_change: 2
+    pairs_with: [ops.writes, latency.writes]
+
+  - name: ttl.deletes
+    title: "Documents deleted by TTL"
+    doc: >-
+      Documents the TTL monitor deleted a second. TTL runs every minute; a large expiry deletes in
+      bursts that load the disk and the oplog, and nightly expiry is a classic periodic cause.
+    signal:
+      mode: rate
+      unit: "docs/s"
+      num: ["serverStatus/metrics/ttl/deletedDocuments"]
+    min_change: 50
+    pairs_with: [cache.dirty, disk.write_await, repl.member_lag]
+
+  - name: cursors.open
+    title: "Open cursors"
+    doc: >-
+      Cursors open on the server. A climb that never comes down is clients not closing or not
+      exhausting cursors, and each one holds resources until it times out.
+    signal:
+      mode: gauge
+      unit: "cursors"
+      num: ["serverStatus/metrics/cursor/open/total"]
+    min_change: 50
+    pairs_with: [memory.heap_outside_cache, connections.current]

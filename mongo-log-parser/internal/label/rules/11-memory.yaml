@@ -1,0 +1,147 @@
+pack: memory
+description: >-
+  The machine's memory and mongod's share of it: /proc/meminfo, tcmalloc and serverStatus.mem.
+
+rules:
+
+  - name: memory.used
+    title: "Memory in use"
+    doc: >-
+      Share of the machine's memory not available to new allocations (MemTotal less MemAvailable,
+      so the page cache the kernel can drop counts as free). Near the top the kernel reclaims hard,
+      then the OOM killer chooses a process, and mongod is usually the largest. MongoDB collects
+      MemAvailable from 4.2.14 and 4.4.5 (ftdc_system_stats_linux.cpp kMemKeys); earlier nodes do
+      not get this label.
+    versions: ["4.2.14-4.3", "4.4.5-"]
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      complement: true
+      num: ["systemMetrics/memory/MemAvailable_kb"]
+      den: ["systemMetrics/memory/MemTotal_kb"]
+    levels:
+      - {name: low, down: [40, 60]}
+      - {name: moderate, band: [40, 60, 75, 85]}
+      - {name: high, band: [75, 85, 92, 96]}
+      - {name: exhausted, up: [92, 96]}
+    elevated: 90
+    min_change: 10
+    pairs_with: [memory.swap_used, memory.page_faults, memory.mongod_resident]
+
+  - name: memory.swap_used
+    title: "Swap in use"
+    doc: >-
+      Share of swap holding pages. A database whose pages are swapped out pays a disk read for
+      memory it believes it has; any sustained swap on a mongod host is worth explaining, and
+      swappiness or a cache sized past the container is the usual reason.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      complement: true
+      num: ["systemMetrics/memory/SwapFree_kb"]
+      den: ["systemMetrics/memory/SwapTotal_kb"]
+    levels:
+      - {name: none, down: [1, 3]}
+      - {name: some, band: [1, 3, 20, 40]}
+      - {name: heavy, up: [20, 40]}
+    elevated: 10
+    min_change: 5
+    pairs_with: [memory.used, memory.page_faults]
+
+  - name: memory.page_faults
+    title: "Page faults"
+    doc: >-
+      Major page faults mongod took a second: memory it had to read back from disk. A burst is
+      memory pressure — swap, or a page cache too small for what is read from it.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["serverStatus/extra_info/page_faults"]
+    levels:
+      - {name: none, down: [1, 5]}
+      - {name: some, band: [1, 5, 50, 200]}
+      - {name: heavy, up: [50, 200]}
+    elevated: 50
+    min_change: 10
+    pairs_with: [memory.used, memory.swap_used, disk.read_await]
+
+  - name: memory.mongod_resident
+    title: "mongod resident memory"
+    doc: >-
+      mongod's resident memory as a share of the machine's. In a container, compare it with the
+      cgroup limit the log reports at startup, not with the host: a cache sized from host memory
+      in a smaller container is a common cause of OOM kills.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 102400  # resident is MiB and MemTotal is KiB: x1024, then x100 for a percentage
+      num: ["serverStatus/mem/resident"]
+      den: ["systemMetrics/memory/MemTotal_kb"]
+    levels:
+      - {name: modest, down: [40, 60]}
+      - {name: large, band: [40, 60, 75, 85]}
+      - {name: dominant, up: [75, 85]}
+    elevated: 80
+    min_change: 5
+    pairs_with: [memory.used, memory.heap_outside_cache, memory.cache_of_ram]
+
+  - name: memory.heap_outside_cache
+    title: "Heap outside the WiredTiger cache"
+    doc: >-
+      Bytes tcmalloc has allocated beyond what the WiredTiger cache holds: connections, sorts,
+      aggregations, plan caches and fragmentation. Rising while the cache stays flat is the shape a
+      reported memory leak usually has — and it is usually workload or allocator retention, not a
+      leak.
+    signal:
+      mode: gauge
+      unit: "GiB"
+      scale: 9.313225746154785e-10  # bytes to GiB
+      num: ["serverStatus/tcmalloc/generic/current_allocated_bytes"]
+      minus: ["serverStatus/wiredTiger/cache/bytes currently in the cache"]
+    min_change: 0.5
+    pairs_with: [connections.current, memory.allocator_free, cursors.open]
+
+  - name: memory.allocator_free
+    title: "Memory freed but kept by tcmalloc"
+    doc: >-
+      Share of tcmalloc's heap that is free but not returned to the operating system
+      (pageheap_free_bytes over heap_size). A large share is memory the machine counts against
+      mongod that no operation is using; tcmallocReleaseRate decides how fast it goes back. Before
+      8.0 only: 8.0 Linux builds use Google tcmalloc, which keeps most free memory in per-CPU
+      caches that pageheap_free_bytes does not count.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/tcmalloc/tcmalloc/pageheap_free_bytes"]
+      den: ["serverStatus/tcmalloc/generic/heap_size"]
+    levels:
+      - {name: small, down: [10, 20]}
+      - {name: notable, band: [10, 20, 30, 45]}
+      - {name: large, up: [30, 45]}
+    elevated: 30
+    min_change: 5
+    pairs_with: [memory.heap_outside_cache, memory.mongod_resident]
+
+  - name: memory.cache_of_ram
+    title: "WiredTiger cache size against RAM"
+    doc: >-
+      The configured cache as a share of the machine's memory. The default is half of RAM less a
+      gigabyte; much more than that leaves too little for connections, sorts and the page cache. In
+      a container the machine's memory may not be the limit the process lives under.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 0.09765625  # cache bytes over MemTotal KiB: /1024, then x100
+      num: ["serverStatus/wiredTiger/cache/maximum bytes configured"]
+      den: ["systemMetrics/memory/MemTotal_kb"]
+    levels:
+      - {name: conservative, down: [30, 40]}
+      - {name: default, band: [30, 40, 55, 62]}
+      - {name: oversized, up: [58, 70]}
+    elevated: 60
+    min_change: 5
+    pairs_with: [memory.used, memory.mongod_resident]

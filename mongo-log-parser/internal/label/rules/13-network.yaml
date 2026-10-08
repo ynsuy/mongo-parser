@@ -1,0 +1,70 @@
+pack: network
+description: >-
+  The TCP stack, host-wide: what mongod cannot see of the network it talks over.
+
+rules:
+
+  - name: net.retransmit
+    title: "TCP retransmission"
+    doc: >-
+      Share of TCP segments the host sent again because the first copy was not acknowledged in
+      time, across every connection on the machine. Above about one percent replication,
+      heartbeats and client replies all slow down, and mongod has no counter of its own that shows
+      it. Minutes that sent fewer than a thousand segments are left out.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      min_den: 1000
+      num: ["systemMetrics/netstat/Tcp:RetransSegs"]
+      den: ["systemMetrics/netstat/Tcp:OutSegs"]
+    levels:
+      - {name: clean, down: [0.1, 0.3]}
+      - {name: minor, band: [0.1, 0.3, 0.7, 1]}
+      - {name: lossy, band: [0.7, 1, 2, 3]}
+      - {name: severe, up: [2, 3]}
+    elevated: 1
+    min_change: 0.5
+    pairs_with: [repl.member_lag, net.resets]
+
+  - name: net.listen_overflows
+    title: "Listen queue overflows"
+    doc: >-
+      Connections the kernel dropped a second because mongod's accept queue was full. A client
+      refused here leaves nothing in the server log; any at all is worth explaining.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["systemMetrics/netstat/TcpExt:ListenOverflows"]
+    levels:
+      - {name: none, down: [0.01, 0.1]}
+      - {name: some, band: [0.01, 0.1, 1, 5]}
+      - {name: many, up: [1, 5]}
+    elevated: 0.1
+    min_change: 0.1
+    pairs_with: [connections.created, cpu.saturated]
+
+  - name: net.resets
+    title: "TCP connections reset"
+    doc: >-
+      Established connections reset a second, host-wide. A burst is clients or a load balancer
+      tearing connections down — timeouts, a failover, a proxy recycling its pool.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["systemMetrics/netstat/Tcp:EstabResets"]
+    min_change: 5
+    pairs_with: [connections.created, net.retransmit]
+
+  - name: net.traffic
+    title: "mongod network traffic"
+    doc: >-
+      Bytes a second in and out of mongod, from its own counters. Shape only: a step is a workload
+      change, a periodic burst a job, and a ceiling the link or an instance's bandwidth limit.
+    signal:
+      mode: rate
+      unit: "MB/s"
+      scale: 0.000001
+      num: ["serverStatus/network/bytesIn", "serverStatus/network/bytesOut"]
+    min_change: 5
+    pairs_with: [ops.total, net.retransmit]

@@ -1,0 +1,255 @@
+pack: storage-engine
+description: >-
+  WiredTiger behind the ticket pools: its cache, eviction, checkpoints and open handles.
+
+rules:
+
+  - name: cache.fill
+    title: "WiredTiger cache fill"
+    doc: >-
+      Bytes in the WiredTiger cache as a share of its configured size, averaged over the minute.
+      Eviction keeps it near 80%; at 95% (eviction_trigger) application threads are made to evict
+      before they may proceed, which turns cache pressure into operation latency. The seconds spent
+      past that line are cache.over_trigger.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: &cache_bytes ["serverStatus/wiredTiger/cache/bytes currently in the cache"]
+      den: &cache_size ["serverStatus/wiredTiger/cache/maximum bytes configured"]
+    levels:
+      - {name: low, down: [50, 70]}
+      - {name: normal, band: [50, 70, 80, 86]}
+      - {name: high, band: [80, 86, 93, 95]}
+      - {name: over_trigger, up: [94, 96]}
+    elevated: 95
+    min_change: 5
+    pairs_with: [cache.over_trigger, cache.app_eviction, cache.read_in]
+
+  - name: cache.over_trigger
+    title: "Seconds the cache was past its eviction trigger"
+    doc: >-
+      Seconds of each minute the cache was 95% full or more — past eviction_trigger, where
+      operations are made to evict pages themselves before they may go on. Each of those seconds is
+      latency added to whatever ran in it.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: *cache_bytes
+      den: *cache_size
+    view: time_above
+    threshold: 95
+    levels: &time_levels
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [cache.fill, cache.app_eviction, tickets.read.scarce]
+
+  - name: cache.dirty
+    title: "WiredTiger dirty cache"
+    doc: >-
+      Modified bytes not yet written, as a share of the configured cache, averaged over the minute.
+      Eviction aims for 5%; at 20% (eviction_dirty_trigger) application threads are made to write
+      dirty pages out themselves, and the seconds spent there are cache.dirty_over_trigger.
+      Sustained high dirty cache is a write load the disk or the checkpoint is not keeping up
+      with. From 7.0 the targets can be set in gigabytes at startup
+      (wiredTigerEvictionDirtyTargetGB, wiredTigerEvictionDirtyMaxGB), which moves these lines.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: &dirty_bytes ["serverStatus/wiredTiger/cache/tracked dirty bytes in the cache"]
+      den: *cache_size
+    levels:
+      - {name: low, down: [3, 6]}
+      - {name: normal, band: [3, 6, 8, 12]}
+      - {name: high, band: [8, 12, 18, 20]}
+      - {name: over_trigger, up: [19, 21]}
+    elevated: 20
+    min_change: 3
+    pairs_with: [cache.dirty_over_trigger, checkpoint.duration, disk.write_await, ops.writes]
+
+  - name: cache.dirty_over_trigger
+    title: "Seconds the dirty cache was past its trigger"
+    doc: >-
+      Seconds of each minute dirty data was 20% of the cache or more — past eviction_dirty_trigger,
+      where operations are made to write dirty pages out themselves. Writes slow down in exactly
+      these seconds, and the write tickets drain behind them.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: *dirty_bytes
+      den: *cache_size
+    view: time_above
+    threshold: 20
+    levels: *time_levels
+    elevated: 1
+    min_change: 3
+    pairs_with: [cache.dirty, checkpoint.running, tickets.write.scarce]
+
+  # WiredTiger stopped reporting pages evicted by application threads between 8.0.12 (which has it)
+  # and 8.0.16 (which reports attempts and failures instead); both checked against real captures.
+  - name: cache.app_eviction
+    title: "Eviction by application threads"
+    doc: >-
+      Pages a second that operations evicted themselves because the eviction workers could not keep
+      the cache under its triggers. Each one is time a query or a write spent doing the storage
+      engine's housekeeping instead of its own work.
+    until: "8.0.16"
+    signal:
+      mode: rate
+      unit: "pages/s"
+      num: ["serverStatus/wiredTiger/cache/pages evicted by application threads"]
+    levels: &app_eviction_levels
+      - {name: none, down: [0.1, 1]}
+      - {name: some, band: [0.1, 1, 10, 50]}
+      - {name: heavy, up: [10, 50]}
+    elevated: 1
+    min_change: 5
+    pairs_with: [cache.over_trigger, cache.dirty_over_trigger]
+
+  - name: cache.app_eviction
+    title: "Eviction by application threads"
+    doc: >-
+      Pages a second that operations evicted themselves because the eviction workers could not keep
+      the cache under its triggers — read from 8.0.16 as the attempts that did not fail. Each one is
+      time a query or a write spent doing the storage engine's housekeeping instead of its own work.
+    since: "8.0.16"
+    signal:
+      mode: rate
+      unit: "pages/s"
+      num: ["serverStatus/wiredTiger/cache/page evict attempts by application threads"]
+      minus: ["serverStatus/wiredTiger/cache/page evict failures by application threads"]
+    levels: *app_eviction_levels
+    elevated: 1
+    min_change: 5
+    pairs_with: [cache.over_trigger, cache.dirty_over_trigger, cache.app_eviction_time]
+
+  - name: cache.app_eviction_time
+    title: "Time operations spent evicting"
+    doc: >-
+      Milliseconds a second application threads spent evicting pages, added across every thread
+      doing it (8.0 and later): 1000 is one operation spending the whole second on the storage
+      engine's housekeeping. It is the latency cost of cache pressure, measured directly.
+    since: "8.0"
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/wiredTiger/cache/application thread time evicting (usecs)"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [cache.app_eviction, cache.over_trigger, cache.dirty_over_trigger]
+
+  - name: cache.read_in
+    title: "Data read into the cache"
+    doc: >-
+      Megabytes a second WiredTiger read from disk into its cache. A step up with the same workload
+      is a working set that stopped fitting, or a new scan reading what was never hot.
+    signal:
+      mode: rate
+      unit: "MB/s"
+      scale: 0.000001
+      num: ["serverStatus/wiredTiger/cache/bytes read into cache"]
+    min_change: 5
+    pairs_with: [disk.read_await, query.collscans, cache.fill]
+
+  # WiredTiger moved its checkpoint statistics out of the transaction section in 7.1.
+  - name: checkpoint.duration
+    title: "Checkpoint duration"
+    doc: >-
+      Seconds the most recent WiredTiger checkpoint took, read on the longest the minute reported.
+      Checkpoints start every 60 seconds; one that takes longer runs back to back with the next,
+      and dirty data accumulates behind it.
+    until: "7.1"
+    signal:
+      mode: gauge
+      unit: "s"
+      scale: 0.001
+      num: ["serverStatus/wiredTiger/transaction/transaction checkpoint most recent time (msecs)"]
+    view: max
+    levels: &checkpoint_levels
+      - {name: quick, down: [5, 15]}
+      - {name: slow, band: [5, 15, 40, 60]}
+      - {name: back_to_back, up: [50, 60]}
+    elevated: 60
+    min_change: 10
+    pairs_with: [checkpoint.running, cache.dirty, disk.write_await]
+
+  - name: checkpoint.duration
+    title: "Checkpoint duration"
+    doc: >-
+      Seconds the most recent WiredTiger checkpoint took, read on the longest the minute reported.
+      Checkpoints start every 60 seconds; one that takes longer runs back to back with the next,
+      and dirty data accumulates behind it.
+    since: "7.1"
+    signal:
+      mode: gauge
+      unit: "s"
+      scale: 0.001
+      num: ["serverStatus/wiredTiger/checkpoint/most recent time (msecs)"]
+    view: max
+    levels: *checkpoint_levels
+    elevated: 60
+    min_change: 10
+    pairs_with: [checkpoint.running, cache.dirty, disk.write_await]
+
+  - name: checkpoint.running
+    title: "Seconds spent checkpointing"
+    doc: >-
+      Seconds of each minute a checkpoint was running. Checkpoints start every 60 seconds; near a
+      full minute they run back to back, and dirty data piles up behind them.
+    until: "7.1"
+    signal:
+      mode: gauge
+      unit: "running"
+      num: ["serverStatus/wiredTiger/transaction/transaction checkpoint currently running"]
+    view: time_above
+    threshold: 0
+    levels: &checkpoint_time_levels
+      - {name: brief, down: [12, 24]}
+      - {name: long, band: [12, 24, 42, 54]}
+      - {name: continuous, up: [48, 57]}
+    elevated: 48
+    min_change: 9
+    pairs_with: [checkpoint.duration, disk.saturated, cache.dirty]
+
+  - name: checkpoint.running
+    title: "Seconds spent checkpointing"
+    doc: >-
+      Seconds of each minute a checkpoint was running. Checkpoints start every 60 seconds; near a
+      full minute they run back to back, and dirty data piles up behind them. From 7.1 WiredTiger
+      reports a checkpoint progress state code instead (0 is inactive), read here as running
+      whenever it is not zero.
+    since: "7.1"
+    signal:
+      mode: gauge
+      unit: "state"
+      num: ["serverStatus/wiredTiger/checkpoint/progress state"]
+    view: time_above
+    threshold: 0
+    levels: *checkpoint_time_levels
+    elevated: 48
+    min_change: 9
+    pairs_with: [checkpoint.duration, disk.saturated, cache.dirty]
+
+  - name: storage.open_handles
+    title: "Open data handles"
+    doc: >-
+      WiredTiger data handles currently open: roughly one per collection and index in use.
+      Climbing toward the open-file limit ends in "Too many open files" and a fatal WiredTiger
+      panic; many collections and a periodic stats sweep across them is the usual way there.
+    signal:
+      mode: gauge
+      unit: "handles"
+      num: ["serverStatus/wiredTiger/data-handle/connection data handles currently active"]
+    min_change: 500

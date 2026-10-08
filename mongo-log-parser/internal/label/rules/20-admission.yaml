@@ -1,0 +1,478 @@
+pack: admission
+description: >-
+  The doors in front of the storage engine: the read and write ticket pools, and the operations
+  queued at them. A ticket pool is read three ways — how much of it was in use, how long it spent
+  nearly or entirely empty, and how big it was — because from 7.0 the server may resize the pool
+  itself, and a pool of 10 that is 90% used is a different story from a pool of 128 that is.
+
+# Every ticket label is here twice for each side: under the paths 6.x and 7.x report
+# (wiredTiger.concurrentTransactions) and under the ones 8.0 reports (queues.execution). Reads and
+# writes, and the two spellings, are kept alike: edit them together.
+
+rules:
+
+  - name: tickets.read.used
+    title: "Read tickets in use"
+    doc: >-
+      Read tickets in use as a share of the pool as it was that second (out over totalTickets),
+      averaged over the minute. It is the general load on the pool: half used is worth noticing
+      even when nothing ran out. Whether it ran out is tickets.read.scarce and
+      tickets.read.empty; whether the pool itself changed size is tickets.read.pool.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/wiredTiger/concurrentTransactions/read/out"]
+      den: ["serverStatus/wiredTiger/concurrentTransactions/read/totalTickets"]
+    levels:
+      - {name: low, down: [25, 50]}
+      - {name: moderate, band: [25, 40, 65, 80]}
+      - {name: high, band: [65, 75, 90, 95]}
+      - {name: near_full, up: [90, 95]}
+    elevated: 75
+    min_change: 10
+    pairs_with: [tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
+
+  - name: tickets.read.scarce
+    title: "Seconds with under 10% of read tickets left"
+    doc: >-
+      Seconds of each minute fewer than a tenth of the read ticket pool was available, measured
+      against the pool as it was that second, so it means the same thing for a pool the server
+      resized as for a fixed one. Near-empty is where reads start to wait; a minute mean of the
+      pool hides ten seconds of it entirely.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "% available"
+      scale: 100
+      num: ["serverStatus/wiredTiger/concurrentTransactions/read/available"]
+      den: ["serverStatus/wiredTiger/concurrentTransactions/read/totalTickets"]
+    view: time_below
+    threshold: 10
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.read.empty, tickets.read.used, tickets.read.pool, tickets.read.wait]
+
+  - name: tickets.read.empty
+    title: "Seconds with no read ticket left"
+    doc: >-
+      Seconds of each minute the read ticket pool had none available. Every read that arrived
+      in those seconds waited at the door of the storage engine. Reads waiting here are held behind whatever holds the tickets: long scans, slow reads from disk, eviction.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets left"
+      num: ["serverStatus/wiredTiger/concurrentTransactions/read/available"]
+    view: time_below
+    threshold: 0.5  # available is a whole number: under a half is none
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.read.used, tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
+
+  - name: tickets.read.pool
+    title: "Read ticket pool size"
+    doc: >-
+      How many read tickets the pool held, averaged over the minute. Fixed unless someone changed
+      it or, from 7.0, the server resized it to the load it measured; a step or an episode here
+      is the pool growing under load or shrinking after it. Shape only: there is no size that is
+      wrong for every server.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets"
+      num: ["serverStatus/wiredTiger/concurrentTransactions/read/totalTickets"]
+    min_change: 4
+    pairs_with: [tickets.read.used, tickets.read.scarce]
+
+  - name: tickets.read.wait
+    title: "Time waiting for a read ticket"
+    doc: >-
+      Milliseconds a second operations spent queued for a read ticket, added across every
+      operation waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of
+      it. Not reported before 7.0. Reads waiting here are held behind whatever holds the tickets: long scans, slow reads from disk, eviction.
+    since: "7.0"
+    until: "8.0"
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/wiredTiger/concurrentTransactions/read/totalTimeQueuedMicros"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [tickets.read.empty, tickets.read.scarce, queue.readers]
+
+  - name: tickets.read.used
+    title: "Read tickets in use"
+    doc: >-
+      Read tickets in use as a share of the pool as it was that second (out over totalTickets),
+      averaged over the minute. It is the general load on the pool: half used is worth noticing
+      even when nothing ran out. Whether it ran out is tickets.read.scarce and
+      tickets.read.empty; whether the pool itself changed size is tickets.read.pool.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/queues/execution/read/out"]
+      den: ["serverStatus/queues/execution/read/totalTickets"]
+    levels:
+      - {name: low, down: [25, 50]}
+      - {name: moderate, band: [25, 40, 65, 80]}
+      - {name: high, band: [65, 75, 90, 95]}
+      - {name: near_full, up: [90, 95]}
+    elevated: 75
+    min_change: 10
+    pairs_with: [tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
+
+  - name: tickets.read.scarce
+    title: "Seconds with under 10% of read tickets left"
+    doc: >-
+      Seconds of each minute fewer than a tenth of the read ticket pool was available, measured
+      against the pool as it was that second, so it means the same thing for a pool the server
+      resized as for a fixed one. Near-empty is where reads start to wait; a minute mean of the
+      pool hides ten seconds of it entirely.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "% available"
+      scale: 100
+      num: ["serverStatus/queues/execution/read/available"]
+      den: ["serverStatus/queues/execution/read/totalTickets"]
+    view: time_below
+    threshold: 10
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.read.empty, tickets.read.used, tickets.read.pool, tickets.read.wait]
+
+  - name: tickets.read.empty
+    title: "Seconds with no read ticket left"
+    doc: >-
+      Seconds of each minute the read ticket pool had none available. Every read that arrived
+      in those seconds waited at the door of the storage engine. Reads waiting here are held behind whatever holds the tickets: long scans, slow reads from disk, eviction.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets left"
+      num: ["serverStatus/queues/execution/read/available"]
+    view: time_below
+    threshold: 0.5  # available is a whole number: under a half is none
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.read.used, tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
+
+  - name: tickets.read.pool
+    title: "Read ticket pool size"
+    doc: >-
+      How many read tickets the pool held, averaged over the minute. Fixed unless someone changed
+      it or, from 7.0, the server resized it to the load it measured; a step or an episode here
+      is the pool growing under load or shrinking after it. Shape only: there is no size that is
+      wrong for every server.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets"
+      num: ["serverStatus/queues/execution/read/totalTickets"]
+    min_change: 4
+    pairs_with: [tickets.read.used, tickets.read.scarce]
+
+  - name: tickets.read.wait
+    title: "Time waiting for a read ticket"
+    doc: >-
+      Milliseconds a second operations spent queued for a read ticket, added across every
+      operation waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of
+      it. Not reported before 7.0. Reads waiting here are held behind whatever holds the tickets: long scans, slow reads from disk, eviction. Normal-priority operations only: exempt operations bypass the pool and are not counted.
+    since: "8.0"
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/queues/execution/read/normalPriority/totalTimeQueuedMicros"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [tickets.read.empty, tickets.read.scarce, queue.readers]
+
+  - name: tickets.write.used
+    title: "Write tickets in use"
+    doc: >-
+      Write tickets in use as a share of the pool as it was that second (out over totalTickets),
+      averaged over the minute. It is the general load on the pool: half used is worth noticing
+      even when nothing ran out. Whether it ran out is tickets.write.scarce and
+      tickets.write.empty; whether the pool itself changed size is tickets.write.pool.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/wiredTiger/concurrentTransactions/write/out"]
+      den: ["serverStatus/wiredTiger/concurrentTransactions/write/totalTickets"]
+    levels:
+      - {name: low, down: [25, 50]}
+      - {name: moderate, band: [25, 40, 65, 80]}
+      - {name: high, band: [65, 75, 90, 95]}
+      - {name: near_full, up: [90, 95]}
+    elevated: 75
+    min_change: 10
+    pairs_with: [tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
+
+  - name: tickets.write.scarce
+    title: "Seconds with under 10% of write tickets left"
+    doc: >-
+      Seconds of each minute fewer than a tenth of the write ticket pool was available, measured
+      against the pool as it was that second, so it means the same thing for a pool the server
+      resized as for a fixed one. Near-empty is where writes start to wait; a minute mean of the
+      pool hides ten seconds of it entirely.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "% available"
+      scale: 100
+      num: ["serverStatus/wiredTiger/concurrentTransactions/write/available"]
+      den: ["serverStatus/wiredTiger/concurrentTransactions/write/totalTickets"]
+    view: time_below
+    threshold: 10
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.write.empty, tickets.write.used, tickets.write.pool, tickets.write.wait]
+
+  - name: tickets.write.empty
+    title: "Seconds with no write ticket left"
+    doc: >-
+      Seconds of each minute the write ticket pool had none available. Every write that arrived
+      in those seconds waited at the door of the storage engine. Writes waiting here are usually behind checkpoints, dirty cache eviction or slow journal writes.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets left"
+      num: ["serverStatus/wiredTiger/concurrentTransactions/write/available"]
+    view: time_below
+    threshold: 0.5  # available is a whole number: under a half is none
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.write.used, tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
+
+  - name: tickets.write.pool
+    title: "Write ticket pool size"
+    doc: >-
+      How many write tickets the pool held, averaged over the minute. Fixed unless someone changed
+      it or, from 7.0, the server resized it to the load it measured; a step or an episode here
+      is the pool growing under load or shrinking after it. Shape only: there is no size that is
+      wrong for every server.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets"
+      num: ["serverStatus/wiredTiger/concurrentTransactions/write/totalTickets"]
+    min_change: 4
+    pairs_with: [tickets.write.used, tickets.write.scarce]
+
+  - name: tickets.write.wait
+    title: "Time waiting for a write ticket"
+    doc: >-
+      Milliseconds a second operations spent queued for a write ticket, added across every
+      operation waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of
+      it. Not reported before 7.0. Writes waiting here are usually behind checkpoints, dirty cache eviction or slow journal writes.
+    since: "7.0"
+    until: "8.0"
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/wiredTiger/concurrentTransactions/write/totalTimeQueuedMicros"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [tickets.write.empty, tickets.write.scarce, queue.writers]
+
+  - name: tickets.write.used
+    title: "Write tickets in use"
+    doc: >-
+      Write tickets in use as a share of the pool as it was that second (out over totalTickets),
+      averaged over the minute. It is the general load on the pool: half used is worth noticing
+      even when nothing ran out. Whether it ran out is tickets.write.scarce and
+      tickets.write.empty; whether the pool itself changed size is tickets.write.pool.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/queues/execution/write/out"]
+      den: ["serverStatus/queues/execution/write/totalTickets"]
+    levels:
+      - {name: low, down: [25, 50]}
+      - {name: moderate, band: [25, 40, 65, 80]}
+      - {name: high, band: [65, 75, 90, 95]}
+      - {name: near_full, up: [90, 95]}
+    elevated: 75
+    min_change: 10
+    pairs_with: [tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
+
+  - name: tickets.write.scarce
+    title: "Seconds with under 10% of write tickets left"
+    doc: >-
+      Seconds of each minute fewer than a tenth of the write ticket pool was available, measured
+      against the pool as it was that second, so it means the same thing for a pool the server
+      resized as for a fixed one. Near-empty is where writes start to wait; a minute mean of the
+      pool hides ten seconds of it entirely.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "% available"
+      scale: 100
+      num: ["serverStatus/queues/execution/write/available"]
+      den: ["serverStatus/queues/execution/write/totalTickets"]
+    view: time_below
+    threshold: 10
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.write.empty, tickets.write.used, tickets.write.pool, tickets.write.wait]
+
+  - name: tickets.write.empty
+    title: "Seconds with no write ticket left"
+    doc: >-
+      Seconds of each minute the write ticket pool had none available. Every write that arrived
+      in those seconds waited at the door of the storage engine. Writes waiting here are usually behind checkpoints, dirty cache eviction or slow journal writes.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets left"
+      num: ["serverStatus/queues/execution/write/available"]
+    view: time_below
+    threshold: 0.5  # available is a whole number: under a half is none
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [tickets.write.used, tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
+
+  - name: tickets.write.pool
+    title: "Write ticket pool size"
+    doc: >-
+      How many write tickets the pool held, averaged over the minute. Fixed unless someone changed
+      it or, from 7.0, the server resized it to the load it measured; a step or an episode here
+      is the pool growing under load or shrinking after it. Shape only: there is no size that is
+      wrong for every server.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "tickets"
+      num: ["serverStatus/queues/execution/write/totalTickets"]
+    min_change: 4
+    pairs_with: [tickets.write.used, tickets.write.scarce]
+
+  - name: tickets.write.wait
+    title: "Time waiting for a write ticket"
+    doc: >-
+      Milliseconds a second operations spent queued for a write ticket, added across every
+      operation waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of
+      it. Not reported before 7.0. Writes waiting here are usually behind checkpoints, dirty cache eviction or slow journal writes. Normal-priority operations only: exempt operations bypass the pool and are not counted.
+    since: "8.0"
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/queues/execution/write/normalPriority/totalTimeQueuedMicros"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [tickets.write.empty, tickets.write.scarce, queue.writers]
+
+  - name: queue.readers
+    title: "Seconds with reads queued"
+    doc: >-
+      Seconds of each minute at least one read operation was queued for a lock or a ticket
+      (globalLock.currentQueue.readers). How deep the queue got is the label's peak second.
+    signal:
+      mode: gauge
+      unit: "operations"
+      num: ["serverStatus/globalLock/currentQueue/readers"]
+    view: time_above
+    threshold: 0
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [tickets.read.empty, tickets.read.wait]
+
+  - name: queue.writers
+    title: "Seconds with writes queued"
+    doc: >-
+      Seconds of each minute at least one write operation was queued for a lock or a ticket
+      (globalLock.currentQueue.writers). How deep the queue got is the label's peak second.
+    signal:
+      mode: gauge
+      unit: "operations"
+      num: ["serverStatus/globalLock/currentQueue/writers"]
+    view: time_above
+    threshold: 0
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [tickets.write.empty, tickets.write.wait]

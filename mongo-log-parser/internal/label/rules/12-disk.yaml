@@ -1,0 +1,157 @@
+pack: disk
+description: >-
+  Block devices, one result per real device.
+
+rules:
+
+  - name: disk.busy
+    title: "Disk busy"
+    doc: >-
+      Share of each minute a block device had a request in flight (io_time). On a single spindle
+      100% is the limit; an SSD or a cloud volume serves many requests at once and can be 100% busy
+      with room to spare, so read it beside disk await, which says whether requests actually
+      waited. FTDC lists only devices with a /sys/block/<dev>/device entry, fixed at startup: dm-*
+      (LVM) and md arrays are not there, only their member disks.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 0.1  # milliseconds busy a second, as a percentage
+      real_device: true
+      num: ["systemMetrics/disks/{i}/io_time_ms"]
+    levels:
+      - {name: idle, down: [5, 15]}
+      - {name: low, band: [5, 15, 40, 60]}
+      - {name: moderate, band: [40, 60, 75, 85]}
+      - {name: high, band: [75, 85, 92, 97]}
+      - {name: saturated, up: [92, 97]}
+    elevated: 85
+    min_change: 15
+    pairs_with: [disk.saturated, disk.await, disk.queue, disk.iops, disk.throughput]
+
+  - name: disk.saturated
+    title: "Seconds the disk was saturated"
+    doc: >-
+      Seconds of each minute a device was busy 95% of the second or more. A checkpoint that pins a
+      volume for twenty seconds a minute averages to a third busy; this counts the twenty. Read it
+      beside disk await: an SSD can be pinned and still answer fast.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 0.1
+      real_device: true
+      num: ["systemMetrics/disks/{i}/io_time_ms"]
+    view: time_above
+    threshold: 95
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [disk.busy, disk.await, checkpoint.running]
+
+  - name: disk.await
+    title: "Disk time per request"
+    doc: >-
+      Average milliseconds a read or write took on each device, queueing included — what iostat
+      calls await. A local SSD answers in under a millisecond and a cloud volume in one to a few;
+      tens of milliseconds means requests are waiting on the device or its throughput limit.
+      Minutes with fewer than sixty requests are left out.
+    signal:
+      mode: rate
+      unit: "ms"
+      min_den: 60
+      real_device: true
+      num: ["systemMetrics/disks/{i}/read_time_ms", "systemMetrics/disks/{i}/write_time_ms"]
+      den: ["systemMetrics/disks/{i}/reads", "systemMetrics/disks/{i}/writes"]
+    levels: &await_levels
+      - {name: fast, down: [2, 5]}
+      - {name: normal, band: [2, 5, 10, 15]}
+      - {name: slow, band: [10, 15, 30, 50]}
+      - {name: very_slow, up: [30, 50]}
+    elevated: 20
+    min_change: 5
+    pairs_with: [disk.busy, disk.queue, cpu.iowait]
+
+  - name: disk.read_await
+    title: "Disk time per read"
+    doc: >-
+      Average milliseconds a read took on each device. Slow reads with a quiet write side point at
+      a cache too small for the working set; slow reads only during a snapshot or backup window
+      point at whatever else was reading the volume.
+    signal:
+      mode: rate
+      unit: "ms"
+      min_den: 60
+      real_device: true
+      num: ["systemMetrics/disks/{i}/read_time_ms"]
+      den: ["systemMetrics/disks/{i}/reads"]
+    levels: *await_levels
+    elevated: 20
+    min_change: 5
+    pairs_with: [cache.read_in, disk.busy]
+
+  - name: disk.write_await
+    title: "Disk time per write"
+    doc: >-
+      Average milliseconds a write took on each device. Journal and checkpoint writes wait on it;
+      slow writes are what turn a checkpoint into a stall and drain the write tickets.
+    signal:
+      mode: rate
+      unit: "ms"
+      min_den: 60
+      real_device: true
+      num: ["systemMetrics/disks/{i}/write_time_ms"]
+      den: ["systemMetrics/disks/{i}/writes"]
+    levels: *await_levels
+    elevated: 20
+    min_change: 5
+    pairs_with: [checkpoint.duration, cache.dirty, tickets.write.scarce]
+
+  - name: disk.queue
+    title: "Disk requests in flight"
+    doc: >-
+      Average number of requests outstanding on each device over the minute (io_queued time over
+      wall time). A deep queue on a device that is also slow per request is a device at its limit;
+      a deep queue answered fast is a device built for it.
+    signal:
+      mode: rate
+      unit: "requests"
+      scale: 0.001
+      real_device: true
+      num: ["systemMetrics/disks/{i}/io_queued_ms"]
+    levels:
+      - {name: shallow, down: [1, 2]}
+      - {name: moderate, band: [1, 2, 8, 16]}
+      - {name: deep, up: [8, 16]}
+    elevated: 8
+    min_change: 2
+    pairs_with: [disk.await, disk.busy]
+
+  - name: disk.iops
+    title: "Disk requests a second"
+    doc: >-
+      Reads plus writes a second on each device. No level is high for every volume; a flat ceiling
+      that busy and await press against is a provisioned IOPS limit or exhausted burst credits.
+    signal:
+      mode: rate
+      unit: "/s"
+      real_device: true
+      num: ["systemMetrics/disks/{i}/reads", "systemMetrics/disks/{i}/writes"]
+    min_change: 100
+    pairs_with: [disk.busy, disk.await]
+
+  - name: disk.throughput
+    title: "Disk throughput"
+    doc: >-
+      Megabytes a second read plus written on each device (sectors are 512 bytes). A volume that is
+      busy at low IOPS and high throughput is at its bandwidth limit rather than its request limit.
+    signal:
+      mode: rate
+      unit: "MB/s"
+      scale: 0.000512  # sectors of 512 bytes to MB
+      real_device: true
+      num: ["systemMetrics/disks/{i}/read_sectors", "systemMetrics/disks/{i}/write_sectors"]
+    min_change: 10
+    pairs_with: [disk.busy, disk.iops]

@@ -1,0 +1,209 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	"mongo-log-parser/internal/funnel"
+	"mongo-log-parser/internal/label"
+	"mongo-log-parser/internal/render"
+)
+
+// renderStall is the first look at a bundle's labels: the ones worth opening, the ones worth
+// noticing, and a count of the ordinary rest. Each one worth opening names the command that opens
+// it; the ordinary ones are in --json, with what every band means.
+func renderStall(stall funnel.Stall, root string, options render.TableOptions) string {
+	parts := make([]string, 0, 6)
+	if len(stall.Open) > 0 {
+		parts = append(parts, fmt.Sprintf("Worth opening (%d)\n%s", len(stall.Open), stallTable(stall.Open, options)))
+	}
+	if len(stall.Notice) > 0 {
+		parts = append(parts, fmt.Sprintf("Worth noticing (%d)\n%s", len(stall.Notice), stallTable(stall.Notice, options)))
+	}
+	if len(stall.Open)+len(stall.Notice) > 0 {
+		parts = append(parts, fmt.Sprintf("Open one, second by second, beside the labels it pairs with and the logs of the same minutes:\n  mongo-log-parser label %s <label> --source <node>", root))
+	}
+	if line := ordinaryLine(stall.Ordinary); line != "" {
+		parts = append(parts, line)
+	}
+	if text := renderImbalances(stall.Imbalances, options); text != "" {
+		parts = append(parts, text)
+	}
+	if text := skippedNote(stall.Skipped); text != "" {
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func stallTable(items []funnel.Item, options render.TableOptions) string {
+	text := func(read func(funnel.Item) string) []string {
+		values := make([]string, len(items))
+		for i, item := range items {
+			values[i] = read(item)
+		}
+		return values
+	}
+	return render.Table([]render.Column{
+		{Title: "Node", Values: text(func(i funnel.Item) string { return i.Source }), Elastic: true},
+		{Title: "Label", Values: text(func(i funnel.Item) string { return strings.TrimSpace(i.Label + " " + i.Instance) })},
+		// The columns a narrow terminal loses first are the ones the opened label repeats in full:
+		// what moved with it, then the usual level. Why it is listed, and its worst second, go last.
+		{Title: "Usual", Values: text(func(i funnel.Item) string { return levelReading(i.Result, i.Typical) }), Drop: 2},
+		{Title: "Worst minute", Values: text(func(i funnel.Item) string { return levelReading(i.Result, i.Peak) })},
+		{Title: "Worst second", Values: text(worstSecond), Drop: 4},
+		{Title: "When", Values: text(func(i funnel.Item) string { return when(i.Result) }), Drop: 3},
+		{Title: "Why", Values: text(func(i funnel.Item) string { return strings.Join(i.Why, "; ") }), Drop: 5},
+		{Title: "Moved with", Values: text(func(i funnel.Item) string { return movedWith(i.Result) }), Drop: 1},
+	}, options)
+}
+
+// ordinaryLine counts the labels that did nothing remarkable, node by node.
+func ordinaryLine(counts []funnel.NodeCount) string {
+	if len(counts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(counts))
+	for _, n := range counts {
+		parts = append(parts, fmt.Sprintf("%s %d", n.Source, n.Count))
+	}
+	return "Ordinary — stayed in their lowest band and did nothing remarkable: " + strings.Join(parts, ", ") +
+		". Every one, with what its bands mean, is in --json."
+}
+
+// levelReading is a value in the label's unit with the band it belongs to most.
+func levelReading(r label.Result, value float64) string {
+	band, _ := r.Rule().Strongest(value)
+	return strings.TrimSpace(amount(value, r.Unit) + " " + band)
+}
+
+// worstSecond is the signal at its most extreme single second, and for a time view how many
+// seconds of the window were past the threshold in all.
+func worstSecond(i funnel.Item) string {
+	if i.PeakSecondAt.IsZero() {
+		return "-"
+	}
+	text := fmt.Sprintf("%s at %s", amount(i.PeakSecond, i.SignalUnit), i.PeakSecondAt.Format("15:04:05"))
+	if i.Rule().Timed() && i.PastSeconds > 0 {
+		text += fmt.Sprintf(", %s past in all", duration(int64(i.PastSeconds)*1000))
+	}
+	return text
+}
+
+func amount(value float64, unit string) string {
+	switch unit {
+	case "%", "% available":
+		if value < 10 {
+			return fmt.Sprintf("%.1f%s", value, unit)
+		}
+		return fmt.Sprintf("%.0f%s", value, unit)
+	case label.TimeUnit:
+		return fmt.Sprintf("%.0f %s", value, unit)
+	case "":
+		return render.Compact(value)
+	}
+	return render.Compact(value) + " " + unit
+}
+
+// when is the moment a reader lines up against the log: the start of the largest episode, the
+// moment of a step, or the worst minute.
+func when(r label.Result) string {
+	const stamp = "01-02 15:04"
+	switch {
+	case r.Periodic != nil:
+		p := r.Periodic
+		return fmt.Sprintf("every %s, %d times, %s to %s", p.Every, p.Occurrences, p.First.Format(stamp), p.Last.Format(stamp))
+	case r.Change != nil:
+		return fmt.Sprintf("%s %s → %s", r.Change.At.Format(stamp), amount(r.Change.Before, r.Unit), amount(r.Change.After, r.Unit))
+	case len(r.Episodes) > 0:
+		e := r.Episodes[0]
+		held := fmt.Sprintf("%dm", e.Minutes)
+		if e.Open {
+			held += "+"
+		}
+		more := ""
+		if len(r.Episodes) > 1 {
+			more = fmt.Sprintf(" (+%d more)", len(r.Episodes)-1)
+		}
+		return fmt.Sprintf("%s for %s at %s, usually %s%s", e.Start.Format(stamp), held, amount(e.Mean, r.Unit), amount(e.Baseline, r.Unit), more)
+	}
+	return "worst " + r.PeakAt.Format(stamp)
+}
+
+// movedWith names the two labels that moved most closely with this one, and which went first.
+func movedWith(r label.Result) string {
+	names := make([]string, 0, 2)
+	for _, rel := range r.Related[:min(2, len(r.Related))] {
+		name := strings.TrimSpace(rel.Label + " " + rel.Instance)
+		switch {
+		case rel.R < 0:
+			name += " (opposite)"
+		case rel.Lead > 0:
+			name += fmt.Sprintf(" (%dm before)", rel.Lead)
+		case rel.Lead < 0:
+			name += fmt.Sprintf(" (%dm after)", -rel.Lead)
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// renderImbalances lists what was not alike: one disk of several, one node of a set.
+func renderImbalances(found []label.Imbalance, options render.TableOptions) string {
+	if len(found) == 0 {
+		return ""
+	}
+	text := func(read func(label.Imbalance) string) []string {
+		values := make([]string, len(found))
+		for i, im := range found {
+			values[i] = read(im)
+		}
+		return values
+	}
+	return "Not alike:\n" + render.Table([]render.Column{
+		{Title: "Label", Values: text(func(im label.Imbalance) string { return im.Label })},
+		{Title: "Across", Values: text(func(im label.Imbalance) string {
+			if im.Source != "" {
+				return fmt.Sprintf("%d devices on %s", im.Count, im.Source)
+			}
+			return fmt.Sprintf("%d nodes", im.Count)
+		})},
+		{Title: "Hottest", Values: text(func(im label.Imbalance) string { return im.Hottest })},
+		{Title: "p95", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Value) })},
+		{Title: "Others", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Others) })},
+		{Title: "Verdict", Values: text(func(im label.Imbalance) string { return fmt.Sprintf("%s (%.1fx)", im.Verdict, im.Ratio) })},
+	}, options)
+}
+
+// skippedNote says which labels a node could not have and why, grouped by reason, so a missing label
+// is never read as a quiet metric.
+func skippedNote(skipped []label.Skip) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	byReason := map[string][]string{}
+	order := make([]string, 0, 8)
+	for _, s := range skipped {
+		key := s.Source + ": " + s.Reason
+		if byReason[key] == nil {
+			order = append(order, key)
+		}
+		byReason[key] = append(byReason[key], s.Label)
+	}
+	lines := make([]string, 0, len(order)+1)
+	lines = append(lines, fmt.Sprintf("Not labelled (%d):", len(skipped)))
+	for _, key := range order {
+		lines = append(lines, "  "+key+" — "+strings.Join(byReason[key], ", "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// openCommand is the command that opens one label on one node.
+func openCommand(root string) func(label.Result) string {
+	return func(r label.Result) string {
+		command := fmt.Sprintf("mongo-log-parser label %s %s --source %s", root, r.Label, r.Source)
+		if r.Instance != "" {
+			command += " --instance " + r.Instance
+		}
+		return command
+	}
+}

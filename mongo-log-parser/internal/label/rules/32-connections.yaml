@@ -1,0 +1,98 @@
+pack: connections
+description: >-
+  Client connections against the limit, and how fast they are opened. The limit is read like a
+  ticket pool: how much of it was in use, and how long it spent nearly exhausted.
+
+rules:
+
+  - name: connections.used
+    title: "Connection limit in use"
+    doc: >-
+      Open connections as a share of the most the server will accept (current over current plus
+      available), averaged over the minute. Near the limit new clients are refused, and the log
+      says so; the seconds spent there are connections.scarce.
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/connections/current"]
+      den: &conn_limit ["serverStatus/connections/current", "serverStatus/connections/available"]
+    levels:
+      - {name: low, down: [25, 50]}
+      - {name: moderate, band: [25, 50, 70, 85]}
+      - {name: high, band: [70, 85, 90, 95]}
+      - {name: near_limit, up: [90, 95]}
+    elevated: 85
+    min_change: 10
+    pairs_with: [connections.scarce, connections.created, connections.rejected]
+
+  - name: connections.scarce
+    title: "Seconds with under 10% of connections left"
+    doc: >-
+      Seconds of each minute fewer than a tenth of the connection limit was still available. A
+      reconnect storm can hit the limit for a few seconds and leave a minute mean looking calm.
+    signal:
+      mode: gauge
+      unit: "% available"
+      scale: 100
+      num: ["serverStatus/connections/available"]
+      den: *conn_limit
+    view: time_below
+    threshold: 10
+    levels:
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    open_at: brief
+    pairs_with: [connections.used, connections.created, connections.rejected]
+
+  - name: connections.created
+    title: "New connections"
+    doc: >-
+      Connections opened a second. Drivers keep a pool, so a steady few is normal; tens a second is
+      clients reconnecting, usually after timeouts, or an application opening a client per
+      request. Each one costs the server a thread and an authentication.
+    signal:
+      mode: rate
+      unit: "conn/s"
+      num: ["serverStatus/connections/totalCreated"]
+    levels:
+      - {name: quiet, down: [1, 3]}
+      - {name: normal, band: [1, 3, 10, 20]}
+      - {name: storm, up: [10, 20]}
+    elevated: 20
+    min_change: 5
+    pairs_with: [connections.current, cpu.kernel_share, net.resets]
+
+  - name: connections.current
+    title: "Open connections"
+    doc: >-
+      Connections open to this node. Shape only — the limit is in connections.used. A step is a
+      deployment or a pool resize; a climb that never comes down is a client leaking connections.
+    signal:
+      mode: gauge
+      unit: "conns"
+      num: ["serverStatus/connections/current"]
+    min_change: 50
+    pairs_with: [connections.created, memory.heap_outside_cache]
+
+  - name: connections.rejected
+    title: "Connections refused"
+    doc: >-
+      Connections mongod refused a second because it was at its limit (6.3 and later). Each one is
+      a client error the application saw.
+    since: "6.3"
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["serverStatus/connections/rejected"]
+    levels:
+      - {name: none, down: [0.001, 0.01]}
+      - {name: some, band: [0.001, 0.01, 1, 5]}
+      - {name: many, up: [1, 5]}
+    elevated: 0.01
+    min_change: 0.01
+    pairs_with: [connections.scarce, connections.used]

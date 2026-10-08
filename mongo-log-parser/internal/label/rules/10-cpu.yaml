@@ -1,0 +1,195 @@
+pack: cpu
+description: >-
+  The processors under mongod, host-wide, from /proc/stat as FTDC records it.
+
+rules:
+
+  - name: cpu.busy
+    title: "CPU busy"
+    doc: >-
+      Share of the whole machine's CPU doing work: user, system, interrupts and steal, not idle and
+      not waiting on I/O. Read on the minute's mean, which is how loaded the machine was; the
+      seconds it spent pinned at the top are cpu.saturated. Past about 90% runnable threads queue
+      for a core and every operation's latency grows with the queue.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      num: &cpu_busy
+        - "systemMetrics/cpu/user_ms"
+        - "systemMetrics/cpu/nice_ms"
+        - "systemMetrics/cpu/system_ms"
+        - "systemMetrics/cpu/irq_ms"
+        - "systemMetrics/cpu/softirq_ms"
+        - "systemMetrics/cpu/steal_ms"
+      den: &cpu_all
+        - "systemMetrics/cpu/user_ms"
+        - "systemMetrics/cpu/nice_ms"
+        - "systemMetrics/cpu/system_ms"
+        - "systemMetrics/cpu/idle_ms"
+        - "systemMetrics/cpu/iowait_ms"
+        - "systemMetrics/cpu/irq_ms"
+        - "systemMetrics/cpu/softirq_ms"
+        - "systemMetrics/cpu/steal_ms"
+    levels:
+      - {name: idle, down: [5, 15]}
+      - {name: low, band: [5, 15, 35, 50]}
+      - {name: moderate, band: [35, 50, 65, 80]}
+      - {name: high, band: [65, 80, 88, 95]}
+      - {name: saturated, up: [88, 95]}
+    elevated: 80
+    min_change: 10
+    pairs_with: [cpu.saturated, cpu.run_queue, cpu.iowait, cpu.kernel_share]
+
+  - name: cpu.saturated
+    title: "Seconds the CPU was saturated"
+    doc: >-
+      Seconds of each minute the whole machine's CPU was 95% busy or more. A minute mean of 50%
+      can be thirty seconds pinned and thirty idle; this is the thirty. Operations that arrive in
+      those seconds wait for a core.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      num: *cpu_busy
+      den: *cpu_all
+    view: time_above
+    threshold: 95
+    levels: &time_levels
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [cpu.busy, cpu.run_queue]
+
+  - name: cpu.iowait
+    title: "CPU waiting on I/O"
+    doc: >-
+      Share of the machine's CPU idle with I/O outstanding. It says the processors had nothing to
+      do but wait for storage; read it beside disk busy and disk await, which say which device.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      num: ["systemMetrics/cpu/iowait_ms"]
+      den: *cpu_all
+    levels:
+      - {name: none, down: [1, 3]}
+      - {name: low, band: [1, 3, 8, 12]}
+      - {name: elevated, band: [8, 12, 20, 30]}
+      - {name: high, up: [20, 30]}
+    elevated: 10
+    min_change: 5
+    pairs_with: [disk.busy, disk.await, cpu.blocked]
+
+  - name: cpu.steal
+    title: "CPU stolen by the hypervisor"
+    doc: >-
+      Share of the machine's CPU a virtual machine was ready to use and the hypervisor gave to
+      someone else. Any sustained steal is a noisy neighbour or an oversubscribed host, and mongod
+      cannot see it.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      num: ["systemMetrics/cpu/steal_ms"]
+      den: *cpu_all
+    levels:
+      - {name: none, down: [1, 2]}
+      - {name: present, band: [1, 2, 5, 10]}
+      - {name: high, up: [5, 10]}
+    elevated: 5
+    min_change: 3
+    pairs_with: [cpu.busy]
+
+  - name: cpu.kernel_share
+    title: "CPU time in the kernel"
+    doc: >-
+      System CPU as a share of user plus system. mongod spends most of its CPU in user space; when
+      the kernel takes as much or more, something below the database is working hard — TLS in the
+      crypto library, transparent huge page compaction, reclaim under memory pressure, or a flood
+      of small I/O. Read it beside cpu.busy: a high share of an idle machine means little.
+    signal:
+      mode: rate
+      unit: "%"
+      scale: 100
+      num: ["systemMetrics/cpu/system_ms"]
+      den: ["systemMetrics/cpu/user_ms", "systemMetrics/cpu/system_ms"]
+      min_den: 6000  # a tenth of a core over the minute, so an idle host's few ticks do not count
+    levels:
+      - {name: normal, down: [30, 45]}
+      - {name: elevated, band: [30, 45, 55, 65]}
+      - {name: dominant, up: [55, 65]}
+    elevated: 50
+    min_change: 10
+    pairs_with: [cpu.busy, cpu.context_switches]
+
+  # FTDC renamed num_cpus to num_logical_cores in 7.0.10, back in 7.0.11, and again in 7.0.16 and 7.3.
+  - name: cpu.run_queue
+    title: "Runnable threads per core"
+    doc: >-
+      Threads ready to run, per logical core, averaged over the minute. Above one, threads wait for
+      a CPU and every operation queues behind them even when cpu.busy looks moderate on a
+      many-core host.
+    versions: ["7.0.10-7.0.11", "7.0.16-7.1", "7.3-"]
+    signal:
+      mode: gauge
+      unit: "per core"
+      num: ["systemMetrics/cpu/procs_running"]
+      den: ["systemMetrics/cpu/num_logical_cores"]
+    levels: &run_queue_levels
+      - {name: light, down: [0.5, 0.8]}
+      - {name: busy, band: [0.5, 0.8, 1.2, 2]}
+      - {name: overloaded, up: [1.2, 2]}
+    elevated: 1.5
+    min_change: 0.3
+    pairs_with: [cpu.busy, cpu.saturated]
+
+  - name: cpu.run_queue
+    title: "Runnable threads per core"
+    doc: >-
+      Threads ready to run, per logical core, averaged over the minute. Above one, threads wait for
+      a CPU and every operation queues behind them even when cpu.busy looks moderate on a
+      many-core host.
+    versions: ["-7.0.10", "7.0.11-7.0.16", "7.1-7.3"]
+    signal:
+      mode: gauge
+      unit: "per core"
+      num: ["systemMetrics/cpu/procs_running"]
+      den: ["systemMetrics/cpu/num_cpus"]
+    levels: *run_queue_levels
+    elevated: 1.5
+    min_change: 0.3
+    pairs_with: [cpu.busy, cpu.saturated]
+
+  - name: cpu.blocked
+    title: "Threads blocked on I/O"
+    doc: >-
+      Processes in uninterruptible sleep, averaged over the minute — almost always waiting on
+      storage. A sustained handful means the disk is behind; it is also how a hung network mount
+      shows, and FTDC itself can stop when its own statfs call blocks on one.
+    signal:
+      mode: gauge
+      unit: "threads"
+      num: ["systemMetrics/cpu/procs_blocked"]
+    levels:
+      - {name: none, down: [0.5, 1]}
+      - {name: some, band: [0.5, 1, 4, 10]}
+      - {name: many, up: [4, 10]}
+    elevated: 4
+    min_change: 2
+    pairs_with: [cpu.iowait, disk.await]
+
+  - name: cpu.context_switches
+    title: "Context switches"
+    doc: >-
+      Context switches a second, host-wide. There is no level that is high for every machine; a
+      step or a burst is threads contending — lock or spinlock contention, a connection storm.
+    signal:
+      mode: rate
+      unit: "/s"
+      num: ["systemMetrics/cpu/ctxt"]
+    min_change: 5000
+    pairs_with: [connections.created, cpu.kernel_share]

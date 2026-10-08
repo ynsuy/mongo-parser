@@ -1,0 +1,209 @@
+pack: replication
+description: >-
+  The replica set as each node saw it: how far members trailed, whether the majority kept up, and
+  whether flow control held writers back.
+
+rules:
+
+  # Lag is read on the worst second of each minute: a member that falls thirty seconds behind and
+  # catches up inside the minute still made every w:majority write in it wait.
+  - name: repl.member_lag
+    title: "Member replication lag"
+    doc: >-
+      How many seconds each member's last applied write trailed the newest write any member had, as
+      this node's replSetGetStatus reported them — one result per member, read on the worst second
+      of each minute. A lagging member is usually short of disk or CPU, applying a large batch, or
+      syncing across a slow link. Members are numbered by their place in the replica set config; an
+      arbiter has no optime and gets no result. Before 6.0 optimeDate has one-second resolution.
+    until: "6.0"
+    signal:
+      mode: gauge
+      unit: "s"
+      behind: true
+      scale: 0.001
+      num: ["replSetGetStatus/members/{i}/optimeDate"]
+    view: max
+    levels: &lag_levels
+      - {name: current, down: [2, 5]}
+      - {name: behind, band: [2, 5, 20, 30]}
+      - {name: lagging, band: [20, 30, 120, 300]}
+      - {name: far_behind, up: [120, 300]}
+    elevated: 30
+    min_change: 5
+    pairs_with: [repl.majority_lag, flow.throttled, net.retransmit]
+
+  - name: repl.member_lag
+    title: "Member replication lag"
+    doc: >-
+      How many seconds each member's last applied write trailed the newest write any member had, as
+      this node's replSetGetStatus reported them — one result per member, read on the worst second
+      of each minute. A lagging member is usually short of disk or CPU, applying a large batch, or
+      syncing across a slow link. Members are numbered by their place in the replica set config; an
+      arbiter has no optime and gets no result.
+    since: "6.0"
+    signal:
+      mode: gauge
+      unit: "s"
+      behind: true
+      scale: 0.001
+      num: ["replSetGetStatus/members/{i}/lastAppliedWallTime"]
+    view: max
+    levels: *lag_levels
+    elevated: 30
+    min_change: 5
+    pairs_with: [repl.majority_lag, flow.throttled, net.retransmit]
+
+  - name: repl.majority_lag
+    title: "Majority commit lag"
+    doc: >-
+      Seconds between the newest write this node applied and the newest write a majority had
+      (lastAppliedWallTime less lastCommittedWallTime), read on the worst second of each minute. It
+      is what w:majority writes wait for and what flow control throttles on; it grows when enough
+      secondaries fall behind.
+    since: "4.2"
+    signal:
+      mode: gauge
+      unit: "s"
+      scale: 0.001
+      num: ["replSetGetStatus/optimes/lastAppliedWallTime"]
+      minus: ["replSetGetStatus/optimes/lastCommittedWallTime"]
+    view: max
+    levels:
+      - {name: current, down: [1, 3]}
+      - {name: behind, band: [1, 3, 10, 20]}
+      - {name: lagging, up: [10, 20]}
+    elevated: 10
+    min_change: 2
+    pairs_with: [repl.member_lag, flow.throttled, latency.writes]
+
+  - name: flow.throttled
+    title: "Seconds flow control was engaged"
+    doc: >-
+      Seconds of each minute flow control reported the set lagged and limited writes on the
+      primary. Any of it means writers were held back on purpose because the majority fell behind.
+      Meaningful on a primary with flow control enabled; a secondary reports it unset.
+    signal:
+      mode: gauge
+      unit: "lagged"
+      num: ["serverStatus/flowControl/isLagged"]
+    view: time_above
+    threshold: 0
+    levels:
+      - {name: off, down: [0, 1]}
+      - {name: intermittent, band: [0, 1, 30, 48]}
+      - {name: engaged, up: [30, 48]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [flow.wait, repl.majority_lag, latency.writes]
+
+  - name: flow.wait
+    title: "Time writers waited on flow control"
+    doc: >-
+      Milliseconds a second writes spent waiting for flow control tickets on this node, added
+      across every write waiting.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/flowControl/timeAcquiringMicros"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+    pairs_with: [flow.throttled, latency.writes]
+
+  - name: repl.apply_rate
+    title: "Oplog entries applied"
+    doc: >-
+      Operations a second this node applied from the oplog, as a secondary. A drop to nothing while
+      the buffer holds entries is an applier that is stuck, not slow.
+    direction: down
+    signal:
+      mode: rate
+      unit: "ops/s"
+      num: ["serverStatus/metrics/repl/apply/ops"]
+    min_change: 50
+    pairs_with: [repl.buffer_fill, repl.member_lag]
+
+  # 8.0 split the buffer into a write buffer and an apply buffer; the apply side is the one that
+  # fills when the node cannot apply what it fetched.
+  - name: repl.buffer_fill
+    title: "Apply buffer fill"
+    doc: >-
+      Share of the replication apply buffer in use on a secondary, averaged over the minute. Full,
+      the node fetches faster than it applies — it is behind on disk or CPU, not on the network.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/metrics/repl/buffer/sizeBytes"]
+      den: ["serverStatus/metrics/repl/buffer/maxSizeBytes"]
+    levels: &buffer_levels
+      - {name: empty, down: [5, 20]}
+      - {name: filling, band: [5, 20, 60, 85]}
+      - {name: full, up: [70, 90]}
+    elevated: 70
+    min_change: 10
+    pairs_with: [repl.buffer_full, repl.apply_rate, repl.member_lag]
+
+  - name: repl.buffer_fill
+    title: "Apply buffer fill"
+    doc: >-
+      Share of the replication apply buffer in use on a secondary, averaged over the minute. Full,
+      the node fetches faster than it applies — it is behind on disk or CPU, not on the network.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/metrics/repl/buffer/apply/sizeBytes"]
+      den: ["serverStatus/metrics/repl/buffer/apply/maxSizeBytes"]
+    levels: *buffer_levels
+    elevated: 70
+    min_change: 10
+    pairs_with: [repl.buffer_full, repl.apply_rate, repl.member_lag]
+
+  - name: repl.buffer_full
+    title: "Seconds the apply buffer was nearly full"
+    doc: >-
+      Seconds of each minute the replication apply buffer was 90% full or more. While it is, the
+      node stops fetching until the applier catches up.
+    until: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/metrics/repl/buffer/sizeBytes"]
+      den: ["serverStatus/metrics/repl/buffer/maxSizeBytes"]
+    view: time_above
+    threshold: 90
+    levels: &time_levels
+      - {name: none, down: [0, 1]}
+      - {name: brief, band: [0, 1, 10, 20]}
+      - {name: frequent, band: [10, 20, 40, 50]}
+      - {name: constant, up: [40, 55]}
+    elevated: 1
+    min_change: 3
+    pairs_with: [repl.buffer_fill, repl.apply_rate]
+
+  - name: repl.buffer_full
+    title: "Seconds the apply buffer was nearly full"
+    doc: >-
+      Seconds of each minute the replication apply buffer was 90% full or more. While it is, the
+      node stops fetching until the applier catches up.
+    since: "8.0"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/metrics/repl/buffer/apply/sizeBytes"]
+      den: ["serverStatus/metrics/repl/buffer/apply/maxSizeBytes"]
+    view: time_above
+    threshold: 90
+    levels: *time_levels
+    elevated: 1
+    min_change: 3
+    pairs_with: [repl.buffer_fill, repl.apply_rate]
