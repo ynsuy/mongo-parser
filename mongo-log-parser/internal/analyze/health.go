@@ -82,7 +82,15 @@ var rules = []rule{
 		next: "logs --category other", all: []string{"transaction"}, any: []string{"abort"}},
 	{key: "lock_timeout", title: "an operation gave up waiting for a lock", severity: "warning",
 		next: "metrics --metric 'globalLock/*'",
-		any:  []string{"lock acquisition", "lockbusy", "maxtimemsexpired", "exceeded time limit", "operation exceeded time limit"}},
+		any:  []string{"lock acquisition", "lockbusy", "locktimeout", "lock timeout"}},
+	// An operation the client gave a maxTimeMS and that ran past it. It is not a lock: the time may
+	// have gone anywhere, and the slow query line says where. "Client's executor exceeded time
+	// limit" is a different message altogether — the server noting a few microseconds of overrun
+	// in its own scheduling — and is not a client's operation at all.
+	{key: "max_time", title: "operations ran past their maxTimeMS", severity: "warning",
+		next: "slow --failed",
+		any:  []string{"maxtimemsexpired", "operation exceeded time limit"},
+		not:  []string{"executor exceeded time limit"}},
 	{key: "cursor_timeout", title: "cursors were reaped before the client came back", severity: "note",
 		next: "logs --category query", all: []string{"cursor"}, any: []string{"timed out", "timeout", "killing"}},
 	{key: "killed_op", title: "operations were interrupted or killed", severity: "note",

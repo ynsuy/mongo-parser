@@ -59,6 +59,11 @@ type Rule struct {
 	// bands of four or more, or the top band of fewer. A pool with no ticket left for a single second
 	// is worth opening; a CPU pinned for a single second is not, and this is where that is said.
 	OpenAt string `json:"open_at,omitempty" yaml:"open_at"`
+	// OpenWith names labels that must agree before this one is worth opening: at least one of them,
+	// on the same node and the same instance, has to have left its lowest band. A device busy every
+	// second of the day that still answers in a tenth of a millisecond is not a device anything waits
+	// on, and disk.busy says so only beside disk.await.
+	OpenWith []string `json:"open_with,omitempty" yaml:"open_with"`
 	// Since and Until bound the server versions the metric exists in, Until exclusive. Empty is
 	// every version this tool reads. A node outside the range is reported as not having the label,
 	// with the reason, rather than as a gap nobody can explain.
@@ -294,6 +299,11 @@ func checkPairs(rules []Rule) error {
 			}
 			if p == r.Name {
 				return fmt.Errorf("%s pairs with itself", r.Name)
+			}
+		}
+		for _, p := range r.OpenWith {
+			if !known[p] || p == r.Name {
+				return fmt.Errorf("%s: open_with %s, which is not another label", r.Name, p)
 			}
 		}
 	}

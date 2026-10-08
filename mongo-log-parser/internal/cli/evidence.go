@@ -35,6 +35,9 @@ type evidence struct {
 	Elsewhere int `json:"elsewhere"`
 	// Lines is the command that prints this node's lines for the window.
 	Next string `json:"next"`
+	// Matched says how the log was tied to the node when the names did not agree exactly, and is
+	// empty when they did. A log matched by its short name alone may be another node's.
+	Matched string `json:"matched,omitempty"`
 }
 
 type slowLine struct {
@@ -65,16 +68,60 @@ func (n *nodeOnly) Add(r analyze.Record) {
 	}
 }
 
+// logSource is the name the node's log goes by, for a node read from FTDC. They agree when the
+// bundle tied the two together. When it could not — a log export that names its pod and nothing
+// more, beside FTDC that names the full host — the log is taken by its short host name, and the
+// note says so, and says when other nodes share that short name and the log may be theirs.
+func logSource(st *store.Store, source string, ftdcSources []string) (string, string) {
+	labels, err := analyze.Labels(st)
+	if err != nil {
+		return source, ""
+	}
+	short := func(name string) string {
+		name, _, _ = strings.Cut(name, "@")
+		name, _, _ = strings.Cut(name, ":")
+		return strings.ToLower(name)
+	}
+	candidates := map[string]bool{}
+	for _, label := range labels {
+		if label == source {
+			return source, ""
+		}
+		if short(label) == short(source) {
+			candidates[label] = true
+		}
+	}
+	if len(candidates) != 1 {
+		return source, ""
+	}
+	var found string
+	for label := range candidates {
+		found = label
+	}
+	sharing := 0
+	for _, other := range ftdcSources {
+		if short(other) == short(source) {
+			sharing++
+		}
+	}
+	note := fmt.Sprintf("the log names this node only %s; it was matched by that short name", found)
+	if sharing > 1 {
+		note += fmt.Sprintf(", which %d nodes here share, so these lines may be another of them", sharing)
+	}
+	return found, note
+}
+
 // readEvidence makes one pass over the stored lines of the window and keeps what one node said.
-func readEvidence(st *store.Store, root, source string, from, to time.Time) (evidence, error) {
+func readEvidence(st *store.Store, root, source string, ftdcSources []string, from, to time.Time) (evidence, error) {
+	logName, matched := logSource(st, source, ftdcSources)
 	queries, health, cluster := analyze.NewSlowQueries(), analyze.NewHealth(), analyze.NewCluster()
 	catalogue, activity := analyze.NewDDL(), analyze.NewActivity()
-	filter := &nodeOnly{source: source, sinks: []analyze.Sink{queries, health, cluster, catalogue, activity}}
+	filter := &nodeOnly{source: logName, sinks: []analyze.Sink{queries, health, cluster, catalogue, activity}}
 	if err := analyze.Run(st, windowQuery(from, to), filter); err != nil {
 		return evidence{}, err
 	}
-	e := evidence{Lines: filter.lines, Elsewhere: filter.others,
-		Next: fmt.Sprintf("mongo-log-parser lines %s --node %s --from %s --to %s", root, source,
+	e := evidence{Lines: filter.lines, Elsewhere: filter.others, Matched: matched,
+		Next: fmt.Sprintf("mongo-log-parser lines %s --node %s --from %s --to %s", root, logName,
 			from.Format("2006-01-02T15:04:05Z"), to.Format("2006-01-02T15:04:05Z"))}
 	e.Errors, e.Warnings = activity.Problems()
 

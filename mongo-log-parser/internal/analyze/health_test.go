@@ -1,6 +1,9 @@
 package analyze
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func readHealth(t *testing.T, text string) *Health {
 	t.Helper()
@@ -64,5 +67,26 @@ func TestHealthCountsAFatalLineTheRulesCannotName(t *testing.T) {
 	signal, seen := health.Get("fatal")
 	if !seen || signal.Count != 1 || signal.Severity != "critical" {
 		t.Errorf("fatal = %+v, want one critical", signal)
+	}
+}
+
+// The server's own note that a scheduling slice overran by microseconds is not an operation giving
+// up on a lock, and a maxTimeMS expiry is not one either.
+func TestOnlyLockMessagesAreLockTimeouts(t *testing.T) {
+	cases := map[string]string{
+		"Client's executor exceeded time limit": "",
+		"LockTimeout: Unable to acquire lock":   "lock_timeout",
+		"Lock acquisition timed out":            "lock_timeout",
+		"operation exceeded time limit":         "max_time",
+		"Assertion: MaxTimeMSExpired":           "max_time",
+	}
+	for message, want := range cases {
+		got := ""
+		if index := matchRule(strings.ToLower(message)); index >= 0 {
+			got = rules[index].key
+		}
+		if got != want {
+			t.Errorf("%q → %q, want %q", message, got, want)
+		}
 	}
 }

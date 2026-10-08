@@ -27,6 +27,7 @@ rules:
     elevated: 85
     min_change: 15
     pairs_with: [disk.saturated, disk.await, disk.queue, disk.iops, disk.throughput]
+    open_with: [disk.await]
 
   - name: disk.saturated
     title: "Seconds the disk was saturated"
@@ -50,6 +51,7 @@ rules:
     elevated: 1
     min_change: 3
     pairs_with: [disk.busy, disk.await, checkpoint.running]
+    open_with: [disk.await]
 
   - name: disk.await
     title: "Disk time per request"
@@ -128,6 +130,7 @@ rules:
     elevated: 8
     min_change: 2
     pairs_with: [disk.await, disk.busy]
+    open_with: [disk.await]
 
   - name: disk.iops
     title: "Disk requests a second"

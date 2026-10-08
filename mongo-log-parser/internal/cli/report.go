@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"math"
 	"mongo-log-parser/internal/funnel"
 	"mongo-log-parser/internal/label"
 	"os"
@@ -67,7 +68,7 @@ func runReport(root string, args []string) error {
 	// the replication lines still carry it.
 	deployment.Learn(cluster)
 
-	states, labelled, labelFailures := labelStreams(set, start, end)
+	states, labelled, cacheSizes, labelFailures := labelStreams(set, start, end)
 	streamFailures = append(streamFailures, labelFailures...)
 	stall := funnel.Lay(labelled.Results, labelled.Imbalances, labelled.Skipped, openCommand(root))
 
@@ -79,7 +80,7 @@ func runReport(root string, args []string) error {
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	chartFrom, chartTo := slowWindow(start, end, q, shapes)
 	bodies := map[string]string{
-		"deployment":  deploymentSection(processes, options),
+		"deployment":  deploymentSection(processes, running(set, states, cacheSizes), options),
 		"labels":      renderStall(stall, root, options),
 		"slow":        renderShapes(shapes, queries, 8, options),
 		"replication": renderReplication(nodes, cluster, states, q.FirstAt, q.LastAt, 8, options),
@@ -177,7 +178,11 @@ func noLogsNote(st *store.Store) string {
 // deploymentSection is the process table with the version history under it: the table says what is
 // running and the history says how it got there, and an upgrade that was rolled back halfway is
 // only visible in the second.
-func deploymentSection(processes []analyze.Process, options render.TableOptions) string {
+func deploymentSection(processes []analyze.Process, fromFTDC []ftdcProcess, options render.TableOptions) string {
+	if len(processes) == 0 && len(fromFTDC) > 0 {
+		return "no startup lines in this window; what each node's FTDC recorded about itself:\n" +
+			renderFTDCProcesses(fromFTDC, options)
+	}
 	body := renderProcesses(processes, options)
 	if history := versionHistory(processes); history != "" {
 		body += "\n\n" + history
@@ -328,8 +333,9 @@ func period(from, to time.Time) string {
 
 // labelStreams reads each node's FTDC once and labels it, keeping the replica set member states
 // that ride along in the same columns.
-func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, []string) {
+func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, map[string]float64, []string) {
 	failures := make([]string, 0)
+	cache := map[string]float64{} // the WiredTiger cache each node was last configured with, in bytes
 	states := make([]replMember, 0, len(set.streams))
 	// The replica set flags are two columns out of thousands; decompressing this data again to read
 	// them would cost as much as the labels.
@@ -349,14 +355,22 @@ func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, [
 		if state, ok := replMemberOf(samples, source); ok {
 			states = append(states, state)
 		}
+		for _, v := range samples.Values[cacheSizeMetric] {
+			if !math.IsNaN(v) && v > 0 {
+				cache[source] = v
+			}
+		}
 		if line := damageLine(samples, source); line != "" {
 			failures = append(failures, line)
 		}
 	}
 	sortMemberStates(states)
 	label.Relate(results)
-	return states, labels{results, label.Imbalances(results), unlabelled}, failures
+	return states, labels{results, label.Imbalances(results), unlabelled}, cache, failures
 }
+
+// cacheSizeMetric is the configured WiredTiger cache, which a label already reads and so is decoded.
+const cacheSizeMetric = "serverStatus/wiredTiger/cache/maximum bytes configured"
 
 // labels is what the rules made of the FTDC: every label, how alike the things that should
 // be alike were, and the labels a node could not have, with the reason.
@@ -364,4 +378,56 @@ type labels struct {
 	Results    []label.Result    `json:"results"`
 	Imbalances []label.Imbalance `json:"imbalances"`
 	Skipped    []label.Skip      `json:"skipped"`
+}
+
+// ftdcProcess is what one node's FTDC says it was: FTDC records the server's identity in every
+// chunk, so it answers "what was running" when the log never caught a startup.
+type ftdcProcess struct {
+	Node     string  `json:"node"`
+	Process  string  `json:"process"`
+	Set      string  `json:"set,omitempty"`
+	Version  string  `json:"version"`
+	State    string  `json:"state,omitempty"`     // the replica set state it was last recorded in
+	CacheGiB float64 `json:"cache_gib,omitempty"` // the WiredTiger cache configured
+}
+
+// running reads each stream's identity, beside the state the node last recorded and the cache size
+// its labels were read against.
+func running(set *streamSet, states []replMember, cache map[string]float64) []ftdcProcess {
+	out := make([]ftdcProcess, 0, len(set.streams))
+	for i, stream := range set.streams {
+		id := stream.Identity()
+		p := ftdcProcess{Node: set.sources[i], Process: id.Process, Set: id.SetName, Version: id.Version}
+		for _, m := range states {
+			if m.Source == p.Node && len(m.Spans) > 0 {
+				p.State = m.EndedAs()
+			}
+		}
+		p.CacheGiB = math.Round(cache[p.Node]/(1<<30)*10) / 10
+		out = append(out, p)
+	}
+	return out
+}
+
+func renderFTDCProcesses(found []ftdcProcess, options render.TableOptions) string {
+	text := func(read func(ftdcProcess) string) []string {
+		values := make([]string, len(found))
+		for i, p := range found {
+			values[i] = orDash(read(p))
+		}
+		return values
+	}
+	return render.Table([]render.Column{
+		{Title: "Node", Values: text(func(p ftdcProcess) string { return p.Node }), Elastic: true},
+		{Title: "Process", Values: text(func(p ftdcProcess) string { return p.Process })},
+		{Title: "Set", Values: text(func(p ftdcProcess) string { return p.Set })},
+		{Title: "Version", Values: text(func(p ftdcProcess) string { return p.Version })},
+		{Title: "Last state", Values: text(func(p ftdcProcess) string { return p.State })},
+		{Title: "Cache", Align: render.AlignRight, Values: text(func(p ftdcProcess) string {
+			if p.CacheGiB == 0 {
+				return ""
+			}
+			return fmt.Sprintf("%gG", p.CacheGiB)
+		})},
+	}, options)
 }

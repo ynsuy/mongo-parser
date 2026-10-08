@@ -75,6 +75,12 @@ func runLabel(root string, args []string) error {
 		}
 	}
 
+	// Every node FTDC names, not only the ones asked about: a log matched by a short name is only
+	// as certain as the number of nodes that share it.
+	_, everyNode, err := ftdcStreams(st, nil)
+	if err != nil {
+		return err
+	}
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	opened := make([]funnel.Opened, 0, len(set.streams))
 	sections, notes := make([]string, 0, 4), make([]string, 0, 4)
@@ -95,7 +101,7 @@ func runLabel(root string, args []string) error {
 			found = true
 			o := funnel.Open(r, results, samples, start, end, at, *span)
 			for j := range o.Focus {
-				e, err := readEvidence(st, root, node, o.Focus[j].From, o.Focus[j].To)
+				e, err := readEvidence(st, root, node, everyNode, o.Focus[j].From, o.Focus[j].To)
 				if err != nil {
 					return err
 				}
@@ -305,6 +311,9 @@ func evidenceText(e evidence) string {
 	}
 	lines := []string{fmt.Sprintf("The node's log in this window: %d lines, %d errors, %d warnings; %d slow operations (%s ms).",
 		e.Lines, e.Errors, e.Warnings, e.Slow, render.Compact(e.SlowMillis))}
+	if e.Matched != "" {
+		lines = append(lines, "  note: "+e.Matched+".")
+	}
 	for _, s := range e.SlowShapes {
 		lines = append(lines, fmt.Sprintf("  slow: %s %s %s ×%d, %s ms (%s)", s.Namespace, s.Operation, s.Plan, s.Count, render.Compact(s.Millis), s.Hash))
 	}

@@ -579,12 +579,18 @@ func (s Shape) Waits() []Wait {
 		// as an answer: every named wait offered somewhere to go and the largest unnamed one did
 		// not. It is also where the time goes when the server itself stopped serving for a moment,
 		// so it is the row to follow when nothing named accounts for the slowness.
-		waits = append(waits, Wait{Name: "unaccounted", Millis: remainder, Share: remainder / total,
-			Next:    "report --only activity,findings",
-			Meaning: "time the log line does not break down: plan execution, yields, and whatever the server was not running for"})
+		unaccounted := UnaccountedWait()
+		unaccounted.Millis, unaccounted.Share = remainder, remainder/total
+		waits = append(waits, unaccounted)
 	}
 	sort.Slice(waits, func(i, j int) bool { return waits[i].Millis > waits[j].Millis })
 	return waits
+}
+
+// UnaccountedWait is the row for the time no named wait accounts for, before its figures are set.
+func UnaccountedWait() Wait {
+	return Wait{Name: "unaccounted", Next: "report --only labels,activity",
+		Meaning: "time the log line does not break down: plan execution, yields, and whatever the server was not running for"}
 }
 
 // Waited reports whether this shape spent a meaningful part of its time on something other than

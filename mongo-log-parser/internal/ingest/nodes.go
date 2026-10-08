@@ -454,8 +454,14 @@ func uniqueWord(n *nodeRow, group []*nodeRow, all []*nodeRow) string {
 		return true
 	}
 	best, bestScore := "", -1
-	for position, w := range domainWords(n.Name) {
+	words := domainWords(n.Name)
+	for position, w := range words {
 		if others[w] {
+			continue
+		}
+		// The last word is the top-level domain. It tells two sites apart only by accident — "net"
+		// beside "local" — and names neither, so it is the choice of last resort.
+		if position == len(words)-1 && position > 0 && best != "" {
 			continue
 		}
 		score := position

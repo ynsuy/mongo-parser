@@ -40,7 +40,8 @@ the ones above it.
 
 A rule names its FTDC paths, what one second's value is (`signal`), which summary of each minute its
 bands are read on (`view`: `mean`, `max`, `min`, or `time_above` / `time_below` a `threshold`), its
-fuzzy bands, and the labels it `pairs_with`. A burst that a minute mean would hide — a ticket pool
+fuzzy bands, the labels it `pairs_with`, and the labels that must agree before it is worth opening
+(`open_with`). A burst that a minute mean would hide — a ticket pool
 empty for ten seconds — is counted in seconds instead. A field MongoDB renamed is a second definition
 of the same label with its own `since` / `until`.
 

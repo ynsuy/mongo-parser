@@ -67,6 +67,57 @@ rules:
     min_change: 5
     pairs_with: [connections.current, cpu.kernel_share, net.resets]
 
+  # "active" counts every connection with an operation in progress, and that includes each driver's
+  # monitoring connections parked in an awaitable hello (awaitingTopologyChanges). They are not work,
+  # so they are taken out of both labels below.
+  - name: connections.idle
+    title: "Open connections doing nothing"
+    doc: >-
+      Open connections with no operation in progress, leaving out drivers' monitoring connections,
+      averaged over the minute. Most of a client pool is idle on any healthy server, so the share
+      says little; the count is what costs: every connection holds a thread and memory on the
+      server. Thousands of them is a pool sized far past what the workload uses, or one that grew
+      during a stall and never shrank.
+    since: "4.4"
+    signal:
+      mode: gauge
+      unit: "conns"
+      num: ["serverStatus/connections/current", "serverStatus/connections/awaitingTopologyChanges"]
+      minus: ["serverStatus/connections/active"]
+    levels:
+      - {name: few, down: [300, 800]}
+      - {name: many, band: [300, 800, 1500, 2500]}
+      - {name: excessive, up: [1500, 3000]}
+    elevated: 2000
+    min_change: 100
+    pairs_with: [connections.current, connections.created, connections.working_share, memory.heap_outside_cache]
+
+  - name: connections.working_share
+    title: "Open connections with an operation in progress"
+    doc: >-
+      Share of the open connections with an operation in progress, leaving out drivers' monitoring
+      connections, at the worst second of each minute. It stays low on a healthy server, because
+      operations finish faster than they arrive; when the server stalls, every operation in flight
+      waits and the share jumps. A pile-up here beside empty ticket pools or queued operations is a
+      stall seen from the client side.
+    since: "4.4"
+    signal:
+      mode: gauge
+      unit: "%"
+      scale: 100
+      num: ["serverStatus/connections/active"]
+      minus: ["serverStatus/connections/awaitingTopologyChanges"]
+      den: ["serverStatus/connections/current"]
+      min_den: 3000
+    view: max
+    levels:
+      - {name: calm, down: [10, 25]}
+      - {name: busy, band: [10, 25, 40, 60]}
+      - {name: piled_up, up: [40, 60]}
+    elevated: 40
+    min_change: 10
+    pairs_with: [tickets.read.empty, tickets.write.empty, queue.readers, queue.writers, connections.created]
+
   - name: connections.current
     title: "Open connections"
     doc: >-
@@ -77,7 +128,7 @@ rules:
       unit: "conns"
       num: ["serverStatus/connections/current"]
     min_change: 50
-    pairs_with: [connections.created, memory.heap_outside_cache]
+    pairs_with: [connections.idle, connections.created, memory.heap_outside_cache]
 
   - name: connections.rejected
     title: "Connections refused"

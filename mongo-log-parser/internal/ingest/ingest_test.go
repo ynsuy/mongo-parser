@@ -70,6 +70,22 @@ func TestSameShortNameInThreeDatacentersStaysThreeNodes(t *testing.T) {
 	}
 }
 
+// Two sites whose domains also end differently: the site word names them, not the top-level domain
+// that happens to differ too.
+func TestTheSiteNamesANodeNotItsTopLevelDomain(t *testing.T) {
+	ftdcs := []ftdcRow{
+		{Origin: "a", Identity: ftdc.Identity{Host: "rs0-1.svc.prod.dc1.local:27017"}, Chunks: 1},
+		{Origin: "b", Identity: ftdc.Identity{Host: "rs0-1.svc.prod.dc2.example.net:27017"}, Chunks: 1},
+	}
+	labels := map[string]bool{}
+	for _, n := range resolveNodes(nil, ftdcs) {
+		labels[n.Label] = true
+	}
+	if !labels["rs0-1@dc1"] || !labels["rs0-1@dc2"] {
+		t.Fatalf("labels %v, want rs0-1@dc1 and rs0-1@dc2", labels)
+	}
+}
+
 // One machine: the log says its unqualified hostname, FTDC says the same; they are one node.
 func TestUnqualifiedNamesJoinWhenUnambiguous(t *testing.T) {
 	streams := []streamRow{stream("", "ip-10-0-0-5", "", 27017)}

@@ -56,8 +56,13 @@ func Lay(results []label.Result, imbalances []label.Imbalance, skipped []label.S
 	stall := Stall{Skipped: skipped}
 	ordinary := map[string]*NodeCount{}
 	order := make([]string, 0, 8)
+	index := map[string]label.Result{}
+	for _, r := range results {
+		index[key(r.Source, r.Label, r.Instance)] = r
+	}
 	for _, r := range results {
 		item := tier(r)
+		corroborate(&item, index)
 		item.Next = next(r)
 		switch item.Tier {
 		case TierOpen:
@@ -95,6 +100,32 @@ func Lay(results []label.Result, imbalances []label.Imbalance, skipped []label.S
 		}
 	}
 	return stall
+}
+
+func key(source, name, instance string) string { return source + "\x00" + name + "\x00" + instance }
+
+// corroborate holds a label back from the open list when the labels its rule needs to agree all
+// stayed in their lowest band on the same node and instance. It is still worth noticing: the
+// reading is real, it is only not a reason to look further on its own.
+func corroborate(item *Item, index map[string]label.Result) {
+	rule := item.Rule()
+	if item.Tier != TierOpen || len(rule.OpenWith) == 0 {
+		return
+	}
+	quiet := make([]string, 0, len(rule.OpenWith))
+	for _, name := range rule.OpenWith {
+		other, found := index[key(item.Source, name, item.Instance)]
+		if !found {
+			return // nothing to disagree with: the label stands on its own
+		}
+		if _, band := other.Rule().Strongest(other.Peak); band > 0 {
+			return
+		}
+		lowest, _ := other.Rule().Strongest(other.Peak)
+		quiet = append(quiet, name+" stayed "+lowest)
+	}
+	item.Tier = TierNotice
+	item.Why = append(item.Why, "but "+strings.Join(quiet, ", "))
 }
 
 // tier decides where one label sits, and records why.

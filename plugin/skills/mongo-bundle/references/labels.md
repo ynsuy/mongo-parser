@@ -28,5 +28,7 @@ it.
 - **Worth opening**: the worst minute reached a band the rule calls worth opening (the top two of
   four or more by default; a rule can lower it — a single second with no ticket left is enough), or
   the label spent more than a rare minute past its mark, or a notable shape above its lowest band.
+  A rule can also name labels that must agree (`open_with`): a disk busy every second is held back
+  to "worth noticing" when its await stayed fast, and the row says so.
 - **Worth noticing**: above its lowest band, or a notable shape on a label without bands.
 - **Ordinary**: counted per node, every one in `--json`.
