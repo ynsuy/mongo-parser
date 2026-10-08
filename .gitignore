@@ -1,0 +1,17 @@
+# Built binaries: stamped by mongo-log-parser/scripts/build.sh, and rebuilt by pidba's launcher on
+# every start.
+bin/
+node_modules/
+
+# Model provider credentials and local agent state. Never commit these.
+pidba/.pi/codex-agent/
+pidba/.pi/local-agent/
+
+# Per-machine editor and agent settings.
+.claude/settings.local.json
+.DS_Store
+.env
+.env.local
+*.swp
+*.swo
+*~

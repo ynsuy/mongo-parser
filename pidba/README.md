@@ -1,7 +1,7 @@
 # pidba
 
 A Pi terminal agent for MongoDB support bundles. It reads nothing itself: every answer comes from
-`mongo-log-parser`, the Go tool in the directory beside this one, which reads the bundle — logs, log
+`mongo-log-parser`, the Go tool in the directory beside this one in the same repository, which reads the bundle — logs, log
 exports, FTDC, shell printouts and configs, in any mix of directories and archives — once into a
 local store and draws its own tables and charts. The agent runs it, shows what it drew, and reasons
 about it in words.
@@ -29,8 +29,14 @@ spaces. Relative paths resolve from the directory where you launched `pidba`. Al
 `pidba /data/mongodb` also works. One directory per message; changing directories starts a new
 bundle revision, and the agent must obtain fresh evidence.
 
-The agent starts with the parser report and follows the relevant logs, FTDC metrics and slow
-query shapes. It distinguishes supporting evidence from an unconfirmed cause.
+The agent starts with the parser report, opens the labels worth opening with `mongo_label`, and
+follows them down to the seconds, the slow query shapes and the log lines. It distinguishes
+supporting evidence from an unconfirmed cause.
+
+The same investigation runs in Claude Code through the plugin in `../plugin`. What pidba adds is
+that the agent has no shell and no file access at all, so no number can come from anywhere but the
+parser, and that the model is chosen per session — OpenAI through a Codex subscription, or a local
+one.
 
 ## Codex model
 

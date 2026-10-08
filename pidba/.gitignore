@@ -1,5 +1,0 @@
-bin/
-node_modules/
-.DS_Store
-.pi/local-agent/
-.pi/codex-agent/
