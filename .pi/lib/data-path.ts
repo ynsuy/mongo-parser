@@ -18,7 +18,7 @@ export function selectPath(text: string, cwd: string) {
     try { found.push({ raw: match[0], path: directory(candidate, cwd) }); } catch { /* Not a local directory. */ }
   }
   const paths = [...new Set(found.map(item => item.path))];
-  if (paths.length > 1) throw new Error("Bir mesajda tek veri klasörü belirt; diğerini ayrı oturumda inceleyebilirsin.");
+  if (paths.length > 1) throw new Error("Select one bundle directory per message; analyze the other in a separate session.");
   for (const item of found) text = text.split(item.raw).join("[selected local bundle]");
   return { text, path: paths[0] };
 }

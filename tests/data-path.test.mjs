@@ -10,13 +10,13 @@ test("select and mask a bundle while preserving the user's problem", () => {
   try {
     mkdirSync(join(root, "mongo bundle"));
     mkdirSync(join(root, "other"));
-    const selected = selectPath('"./mongo bundle" sorgular neden yavaş?', root);
+    const selected = selectPath('"./mongo bundle" why are queries slow?', root);
     assert.equal(selected.path, realpathSync(join(root, "mongo bundle")));
-    assert.equal(selected.text, "[selected local bundle] sorgular neden yavaş?");
-    assert.equal(selectPath(`Sorun ${root}/other içinde`, root).path, realpathSync(join(root, "other")));
-    assert.equal(selectPath("neden yavaş?", root).path, undefined);
-    assert.equal(selectPath("./missing neden yavaş?", root).path, undefined);
-    assert.throws(() => selectPath('"./mongo bundle" ./other karşılaştır', root), /tek veri klasörü/);
+    assert.equal(selected.text, "[selected local bundle] why are queries slow?");
+    assert.equal(selectPath(`The issue is in ${root}/other`, root).path, realpathSync(join(root, "other")));
+    assert.equal(selectPath("why is it slow?", root).path, undefined);
+    assert.equal(selectPath("./missing why is it slow?", root).path, undefined);
+    assert.throws(() => selectPath('"./mongo bundle" compare ./other', root), /one bundle directory/);
     assert.equal(selectPath("serverStatus/wiredTiger/cache/bytes", root).path, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
