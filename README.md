@@ -66,9 +66,10 @@ Building requires Go. The agent has only the parser tools listed below, with no 
 
 | Tool | What it does |
 | --- | --- |
-| `mongo_report` | Reads the whole path in one pass: what was running, findings, log volume over time, a chart per FTDC stream, slow query shapes and where their time went, replication and sharding events, catalogue changes, logged conditions, log groups. The first call for an unexplained problem; `only` keeps one section. |
+| `mongo_report` | Reads the whole path in one pass: what was running, what the labels saw (every metric of every node, sorted into worth opening, worth noticing and ordinary), log volume over time, slow query shapes and where their time went, replication and sharding events, catalogue changes, logged conditions, log groups. The first call for an unexplained problem; `only` keeps one section. |
+| `mongo_label` | Opens one label on one node: the seconds it spent past its mark, the labels it pairs with over those seconds, what moved with it, and the node's log in the same window; `at` reads a window second by second. |
 | `mongo_deployment` | What was running: version, role, storage engine, cache size, replica set, authorization, restarts, unclean shutdowns. Read it before reading any figure that depends on it. |
-| `mongo_metrics` | Charts named FTDC metrics, or ranks the performance-relevant ones. Several streams can be charted together to compare nodes. Paths take `*` and `?`. |
+| `mongo_metrics` | Charts named FTDC metrics, or the standard overview board. Several streams can be charted together to compare nodes. Paths take `*` and `?`. |
 | `mongo_slow` | Ranks slow query shapes by the time they cost, with plan, documents examined, inefficiency — and the breakdown of where the time went: flow control, write concern, lock acquire, ticket queue, storage read, remote shards, cpu. |
 | `mongo_ddl` | Index builds with their durations and outcomes, and the drops, creates, renames and FCV changes around them. |
 | `mongo_health` | The conditions the server logs at severity I and never ranks: authentication failures, write conflicts, heartbeat failures, connection churn, stale routing tables, storage operations that took too long. |
@@ -86,9 +87,8 @@ FTDC side of the same mechanism is `serverStatus.flowControl` in `mongo_metrics`
 
 `mongo_metrics` takes several streams. Each is read over the same window and charted against the
 same value axis, because two nodes drawn to their own scales look alike however far apart their
-numbers are. Every stream gets a colour of its own and a legend line names them. Ranking is done
-once across the streams rather than per stream, so a metric that appears has a row for every node
-instead of one node's busiest metric sitting next to another node's.
+numbers are. Every stream gets a colour of its own and a legend line names them, and a metric that
+appears has a row for every node.
 
 By default each stream gets its own chart under a shared axis. `overlay` puts them on one chart,
 which is the view for finding the moment two nodes stopped agreeing. Where lines cross, the one
@@ -113,9 +113,10 @@ whether that is allowed, rather than per question.
 
 ## Scope
 
-Structured JSON logs (MongoDB 4.4 and later) and the Kubernetes/rsyslog exports of them; the 4.2
-text format is recognised and not yet read. MySQL and PostgreSQL adapters are not written. The
-parser screens; it does not diagnose. A finding is a place to look, not a cause.
+Structured JSON logs (MongoDB 4.4 and later) and the Kubernetes/rsyslog exports of them. The 4.2
+and older text format is recognised and deliberately not read: `coverage` names the files it skipped
+so a count is never short without saying why. MySQL and PostgreSQL adapters are not written. The
+parser labels; it does not diagnose. A label worth opening is a place to look, not a cause.
 
 Query hashes are copied verbatim from the log (`queryHash` or `planCacheShapeHash`); they are never
 generated. `not logged` identifies a namespace/operation/plan group without a server hash.

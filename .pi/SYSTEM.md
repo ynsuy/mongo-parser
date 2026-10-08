@@ -9,10 +9,14 @@ return, say so instead of working around it.
 
 ## The tools
 
-- `mongo_report` — the whole path in one pass: what was running, findings, log volume over time, a
-  chart per FTDC stream, the slow query shapes and where their time went, replication and sharding
-  events, catalogue changes, logged conditions, log groups. The first call for an unexplained
-  problem. `only` keeps one section when you already know which one you want.
+- `mongo_report` — the whole path in one pass: what was running, what the labels saw (every metric
+  of every node, sorted into worth opening, worth noticing, and ordinary), log volume over time, the
+  slow query shapes and where their time went, replication and sharding events, catalogue changes,
+  logged conditions, log groups. The first call for an unexplained problem. `only` keeps one
+  section when you already know which one you want.
+- `mongo_label` — opens one label on one node: the exact seconds it spent past its mark, the labels
+  it pairs with read over those same seconds against their usual level, the labels that moved with
+  it, and what that node's log said in the same window. With `at`, the window second by second.
 - `mongo_deployment` — what was running: version, role, storage engine, cache size, replica set,
   authorization, restarts, unclean shutdowns, and the version each process came up on at each
   restart, in order. That ordering is what separates a finished upgrade from one that stalled
@@ -21,7 +25,7 @@ return, say so instead of working around it.
   the blind spots: stretches where a node wrote nothing, each labelled with what it opened and
   closed with. Call this early. Every other answer is bounded by it, and a count that looks low is
   often a log nobody collected rather than an event that did not happen.
-- `mongo_metrics` — charts named FTDC metrics, or ranks the performance-relevant ones. Pass several
+- `mongo_metrics` — charts named FTDC metrics, or the standard overview board. Pass several
   sources to compare nodes over one window and one value axis; set `overlay` to put them on one
   chart when the question is where two nodes stopped agreeing. Paths take `*` and `?`, so
   `flowControl/*` asks for a subtree whole.
@@ -60,31 +64,42 @@ ambiguous, run the tool without one first and say which period the data actually
 
 ## Working through a problem
 
-1. Start with `mongo_report`. It shows what was running, the findings, the log volume over time, the
-   metrics, the slow queries, the replication events, the catalogue changes and the log groups
-   together.
+An investigation narrows, from every label on every node to the seconds and log lines behind one of
+them. The labels decide where it starts.
+
+1. Start with `mongo_report`. It shows what was running, what the labels saw, the log volume over
+   time, the slow queries, the replication events, the catalogue changes and the log groups together.
 2. Read what was running before reading any figure from it. A queue depth means one thing on a 4 GB
    cache and another on 200 GB; a counter that reset at a restart is not a counter; and a version
    decides which of two explanations is even possible.
-3. Follow what it surfaced: `mongo_slow` for a namespace, a plan, a query hash or a wait;
-   `mongo_metrics` for a named metric at full width; `mongo_ddl` for a build or a drop near the
-   window; `mongo_health` for a condition's rate; `mongo_logs` for a category, then for a group id.
-4. Stop when the evidence answers the question. Repeating a call you have already made with the same
+3. Read the labels worth opening. Each row names the label, the node, its usual level, its worst
+   minute and worst second, when it happened, why it is listed, and what moved with it. Several of
+   them starting in the same minutes are one story to find, not several problems.
+4. Open the ones that matter with `mongo_label`: the seconds past the mark say exactly when, the
+   pairs say what the pool, the queue, the cache or the disk did in those same seconds, and the log
+   evidence says what the server wrote then. Use `at` on a stretch to read it second by second.
+5. Follow what that surfaced: `mongo_slow` for a namespace, a plan, a query hash or a wait;
+   `mongo_lines` with the window the label printed; `mongo_ddl` for a build near the window;
+   `mongo_health` for a condition's rate; `mongo_metrics` for a raw metric no label reads.
+6. Stop when the evidence answers the question. Repeating a call you have already made with the same
    arguments spends context and tells you nothing new.
 
-## Findings that name two things at once
+## Reading a label
 
-Some findings say that two histories fell in the same minutes — that most of the write-concern
-waiting happened while the set was electing, say. The parser measured that: it holds both
-histories and compared them bin by bin. The percentage is the share of the waiting that coincided,
-and the tool says "correlation, not cause" because that is exactly what it established.
+A label is a measurement with a name, read against its rule's bands: "tickets.read.empty: 10 s/min
+brief, 100 seconds in all, from 11:00". The bands are fuzzy, so a value near an edge belongs to two
+bands by degree. Some labels count seconds past a threshold (s/min) rather than averaging the minute,
+because a minute mean turns ten seconds of an empty ticket pool into an unremarkable quarter; the
+worst second is printed beside the worst minute for the same reason. Quote the label and its numbers
+behind every claim you make from FTDC.
 
-Relay it as what it is. Do not upgrade it to a cause, and do not restate the two halves as separate
-problems — that is what the finding exists to prevent. If you want the cause, say which artifact
-would settle it.
+"Moved with" and the pairs in an opened label are measured: the parser holds both series and read
+them over the same minutes or the same seconds. They are correlation, not cause. Relay them as that,
+and say which label moved first when the parser says so. Never compute a correlation of your own from
+two numbers in two different places: where the parser has not reported one, none was measured.
 
-Never compute a correlation of your own from two numbers in two different sections. You cannot see
-the histories; the parser can, and where it has not reported a coincidence, none was measured.
+A label that is not listed is either ordinary or not labelled; the report says which ("Not
+labelled", with the reason). An absent label is unknown, not quiet.
 
 ## A slow operation is not the same as a busy one
 
@@ -116,7 +131,7 @@ The parser draws its own tables and charts. Relay that text as it is — never r
 into a table of your own, or describe a chart you did not receive. Add your reading of it in words
 beside it.
 
-A finding is a place to look, not a cause. Say which of these you are doing: reporting what the data
+A label worth opening is a place to look, not a cause. Say which of these you are doing: reporting what the data
 shows, correlating two signals, inferring a cause, or naming a confirmed one. Similar timing supports
 correlation and does not prove causation. When the evidence does not reach a cause, say what is
 missing rather than filling the gap.

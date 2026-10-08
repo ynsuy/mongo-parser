@@ -15,8 +15,11 @@ Run it first on an unfamiliar bundle: a gap in coverage changes what every count
 question about a window nobody logged has no answer.
 
 `mongo_report` then reads the whole bundle in one pass. Run it before any narrower tool, without a
-time window unless the user gave one. Its findings, slow query table and replication summary decide where to
-look next; a category list is a navigation aid, not the set of things that can be wrong.
+time window unless the user gave one. Its labels worth opening decide where to look next: open them
+with `mongo_label`, which says exactly which seconds a label was past its mark, what the labels it
+pairs with did in those seconds, and what the node's log said then. The slow query table and the
+replication summary sit beside them; a category list is a navigation aid, not the set of things
+that can be wrong.
 
 Read its first section before its numbers. What was running — the version, the role, the cache size,
 whether the process restarted inside the window — decides what every figure below it means, and a

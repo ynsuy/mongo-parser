@@ -226,23 +226,45 @@ ${dataPath
   pi.registerTool({
     name: "mongo_report",
     label: "MongoDB path report",
-    description: "Read the whole path in one pass and report what stands out: what was running (server version, role, storage engine, cache size, restarts and unclean shutdowns), the findings the screening rules produced, a chart of how much was logged over time split by severity, a chart for the most notable metric of each FTDC stream, the slow query shapes that cost the most time and where that time went, replication and sharding events per node, the catalogue changes (index builds, drops, renames), the conditions the server logged without raising a severity, and the log groups worth reviewing. This is the right first call for an unexplained problem; the other tools drill into what it surfaces. Use only to keep one section when you already know which one you want.",
+    description: "Read the whole path in one pass and report what stands out: what was running (server version, role, storage engine, cache size, restarts and unclean shutdowns), what the labels saw — every machine and server metric of every node read against its rule's bands and shape, sorted into the labels worth opening, the ones worth noticing, and a count of the ordinary rest — a chart of how much was logged over time split by severity, the slow query shapes that cost the most time and where that time went, replication and sharding events per node, the catalogue changes (index builds, drops, renames), the conditions the server logged without raising a severity, and the log groups worth reviewing. This is the right first call for an unexplained problem: the labels worth opening are where an investigation starts, and mongo_label opens one. Use only to keep one section when you already know which one you want.",
     parameters: Type.Object({
-      only: Type.Optional(Type.Array(Type.String(), { maxItems: 9, description: "Sections to print: deployment, findings, activity, metrics, slow, replication, ddl, signals, logs. Every section by default." })),
-      top: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "How many metric charts to draw" })),
-      height: Type.Optional(Type.Integer({ minimum: 2, maximum: 12, description: "Chart rows per metric" })),
+      only: Type.Optional(Type.Array(Type.String(), { maxItems: 9, description: "Sections to print: deployment, labels, activity, slow, replication, storage, ddl, signals, logs. Every section by default." })),
       ...windowFlags,
     }),
     async execute(_id, p, signal) {
       return result(await run("report", [
-        ...arg("only", (p.only ?? []).join(",")), ...arg("top", p.top), ...arg("height", p.height),
-        ...windowArgs(p),
+        ...arg("only", (p.only ?? []).join(",")), ...windowArgs(p),
       ], signal));
     },
     ...renderer("report", (report) => {
-      const findings = (report.data.findings as unknown[])?.length ?? 0;
+      const labels = (report.data.labels ?? {}) as { open?: unknown[]; notice?: unknown[] };
       const shapes = (report.data.slow_queries as unknown[])?.length ?? 0;
-      return `${findings} findings · ${shapes} query shapes`;
+      return `${labels.open?.length ?? 0} labels worth opening · ${labels.notice?.length ?? 0} worth noticing · ${shapes} query shapes`;
+    }),
+  });
+
+  pi.registerTool({
+    name: "mongo_label",
+    label: "MongoDB label opened",
+    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst single second, every stretch of seconds it spent past its mark, longest first, with exact start and end times, and for the longest few windows: the labels the rule pairs with, read over exactly those seconds beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window second by second, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_over_trigger, disk.await.",
+    parameters: Type.Object({
+      label: Type.String({ description: "The label to open, as the report printed it, e.g. tickets.read.empty" }),
+      source: Type.Optional(Type.String({ description: "The node to open it on, as the report printed it. Every node that has the label by default." })),
+      instance: Type.Optional(Type.String({ description: "The disk or replica set member, for a label that has them (the word after the label name in the report)" })),
+      at: Type.Optional(Type.String({ description: "A moment to read second by second, same forms as from; take it from a stretch or window the label printed" })),
+      span: Type.Optional(Type.String({ description: "How much around at to print second by second, e.g. 2m. 4m by default, at most 15m" })),
+      ...windowFlags,
+    }),
+    async execute(_id, p, signal) {
+      return result(await run("label", [
+        p.label, ...arg("source", p.source), ...arg("instance", p.instance), ...arg("at", p.at),
+        ...arg("span", p.span), ...windowArgs(p),
+      ], signal));
+    },
+    ...renderer("label", (report) => {
+      const opened = (report.data as unknown as { stretch_count?: number }[]) ?? [];
+      const stretches = opened.reduce((sum, o) => sum + (o.stretch_count ?? 0), 0);
+      return `${opened.length} opened · ${stretches} stretches past the mark`;
     }),
   });
 
@@ -264,12 +286,12 @@ ${dataPath
   pi.registerTool({
     name: "mongo_metrics",
     label: "MongoDB FTDC metrics",
-    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them and the parser ranks the performance-relevant ones (tickets, queues, cache, latency, opcounters, cpu, disk) by importance and by what moved. Name several sources to compare nodes: each stream is read over the same window and gets its own colour, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
+    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them for the standard overview board (queues, tickets, latency, operations, cache, cpu, disk), the same board for every node and every window. Name several sources to compare nodes: each stream is read over the same window and gets its own colour, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
     parameters: Type.Object({
       sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
-      metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*" })),
+      metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*. Every column FTDC holds is reachable, not only the board's: the kernel's TCP counters are systemMetrics/netstat/Tcp:* and TcpExt:* (RetransSegs, OutSegs, TCPTimeouts, ListenOverflows, CurrEstab)" })),
       overlay: Type.Optional(Type.Boolean({ description: "Draw every stream of a metric on one chart, a colour per stream, instead of a chart each" })),
-      top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics to rank when none are named" })),
+      top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics of the standard board to draw when none are named" })),
       height: Type.Optional(Type.Integer({ minimum: 2, maximum: 20, description: "Chart rows per metric" })),
       bin: Type.Optional(Type.Integer({ minimum: 1, description: "Bin size in seconds; chosen from the window by default" })),
       ...windowFlags,
