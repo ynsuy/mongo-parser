@@ -2,12 +2,56 @@ package ingest
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"mongo-log-parser/internal/ftdc"
+	"mongo-log-parser/internal/source"
 	"mongo-log-parser/internal/store"
 )
+
+func TestFTDCCopiesRequireMatchingContents(t *testing.T) {
+	for _, archived := range []bool{false, true} {
+		t.Run(map[bool]string{false: "on disk", true: "archived"}[archived], func(t *testing.T) {
+			in := &ingester{ftdcDir: t.TempDir(), ftdc: map[string]*ftdcGroup{}, seenFTDC: map[string]string{}}
+			add := func(dir, name, data string) {
+				t.Helper()
+				entry := &source.Entry{Path: dir + "/" + name, Dir: dir, Name: name, Size: int64(len(data)), Kind: source.FTDC}
+				if !archived {
+					entry.OnDisk = filepath.Join(in.ftdcDir, dir, name)
+				}
+				if err := in.visit(entry, strings.NewReader(data)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Same name and size, different bytes: both nodes must survive.
+			add("node-a", "metrics.same", "node-a")
+			add("node-b", "metrics.same", "node-b")
+			// A renamed copy is still a copy.
+			add("copy", "metrics.renamed", "node-a")
+			if len(in.ftdc) != 2 || in.ftdc["node-a"] == nil || in.ftdc["node-b"] == nil {
+				t.Fatalf("different contents were lost or a copy was retained: %+v", in.ftdc)
+			}
+			if in.sources[0].Note != "" || in.sources[1].Note != "" || !strings.Contains(in.sources[2].Note, "an exact copy of node-a/metrics.same") {
+				t.Fatalf("incorrect duplicate notes: %+v", in.sources)
+			}
+		})
+	}
+}
+
+func TestFTDCReadFailureDoesNotRegisterCopy(t *testing.T) {
+	in := &ingester{ftdcDir: t.TempDir(), ftdc: map[string]*ftdcGroup{}, seenFTDC: map[string]string{}}
+	want := errors.New("interrupted FTDC input")
+	entry := &source.Entry{Path: "node/metrics.test", Dir: "node", Name: "metrics.test", Kind: source.FTDC}
+	err := in.visit(entry, io.MultiReader(strings.NewReader("partial"), iotest.ErrReader(want)))
+	if !errors.Is(err, want) || len(in.seenFTDC) != 0 || len(in.ftdc) != 0 {
+		t.Fatalf("incomplete contents registered: err=%v hashes=%v streams=%v", err, in.seenFTDC, in.ftdc)
+	}
+}
 
 // The server's own truncation note follows attr in an export's message; it is not part of attr.
 func TestExportedMessageWithTruncationNote(t *testing.T) {

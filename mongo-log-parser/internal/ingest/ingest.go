@@ -77,7 +77,7 @@ type ingester struct {
 	// Bundles carry the same file twice more often than not: an archive and its unpacked copy, the
 	// same log attached to two emails. A copy is read once; counted twice it doubles every number.
 	seenContent map[string]string // content hash -> path of the first copy
-	seenFTDC    map[string]string // file name and size -> path of the first copy
+	seenFTDC    map[string]string // SHA-256 of contents -> path of the first copy
 	dupStreams  map[int64]bool
 
 	blocks chan blockOut
@@ -264,19 +264,7 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 		return err
 
 	case source.FTDC:
-		key := fmt.Sprintf("%s|%d", e.Name, e.Size)
-		in.mu.Lock()
-		earlier, copied := in.seenFTDC[key]
-		if !copied {
-			in.seenFTDC[key] = e.Path
-		} else {
-			in.setNote(sourceID, "an exact copy of "+earlier+"; read once")
-		}
-		in.mu.Unlock()
-		if copied {
-			_, _ = io.Copy(io.Discard, content)
-			return nil
-		}
+		hash := sha256.New()
 		path := e.OnDisk
 		if path == "" {
 			// Out of an archive: written to disk, because chunks are read by offset.
@@ -290,13 +278,25 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(f, content)
-			f.Close()
+			_, err = io.Copy(io.MultiWriter(f, hash), content)
+			closeErr := f.Close()
 			if err != nil {
 				return err
 			}
+			if closeErr != nil {
+				return closeErr
+			}
+		} else if _, err := io.Copy(hash, content); err != nil {
+			return err
 		}
 		in.mu.Lock()
+		key := hex.EncodeToString(hash.Sum(nil))
+		if earlier, copied := in.seenFTDC[key]; copied {
+			in.setNote(sourceID, "an exact copy of "+earlier+"; read once")
+			in.mu.Unlock()
+			return nil
+		}
+		in.seenFTDC[key] = e.Path
 		group, ok := in.ftdc[e.Dir]
 		if !ok {
 			group = &ftdcGroup{Origin: e.Dir}
