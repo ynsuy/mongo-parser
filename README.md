@@ -13,15 +13,18 @@ docs/               labels-review.xlsx, every label rule laid out for review
 
 ## How an investigation narrows
 
-1. **Labels.** Every metric of every node is read against a rule (`mongo-log-parser/internal/label/rules`)
-   and described by its level, its shape and when it changed. A burst a minute mean would hide — a
-   ticket pool empty for ten seconds — is counted in seconds. The report lays the labels out as
+1. **Labels.** Metrics covered by the catalogue are read against definitions (`mongo-log-parser/internal/label/rules`)
+   and described by their values, shapes and observed times. Time views summarize valid-sample shares,
+   normalized to s/min, not continuous elapsed durations. The report lays the labels out as
    worth opening, worth noticing, and ordinary.
-2. **One label opened.** The exact seconds it was past its mark, the labels its rule pairs with read
-   over those same seconds, the labels that moved with it, and what that node's log said then.
+2. **One label opened.** The observed samples past its reference, other labels over those same
+   timestamps, measured correlations, and available matched-node logs.
 3. **The seconds and the lines.** The window second by second, then the log lines themselves.
 
-The tool labels and does not diagnose; the cause is read from the labels beside the logs.
+The parser reports observations and derived summaries, not preset causes or fixes. Reference bands
+and review priorities are navigation, not incident severity. Unlabelled or missing evidence remains
+unknown. The analyst or AI evaluates hypotheses using node/time-aligned evidence and states what
+cannot be established; neither an isolated maximum nor a dominant logged wait establishes cause.
 
 ## Use it
 

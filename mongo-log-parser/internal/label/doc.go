@@ -1,6 +1,6 @@
 // Package label describes what each metric did over a window, in words a reader can line up against
-// a log: how high it usually sat and how high it went, how long it spent somewhere it should not
-// be, whether it held steady, climbed, stepped, or rose for a stretch and came back, and when.
+// a log: its usual and extreme values, samples past fixed numerical references,
+// whether it held steady, climbed, stepped, or rose for a stretch and came back, and when.
 //
 // The labels are where an investigation starts. They are read across every node first, the ones
 // that were not ordinary are picked out, and only then is one of them opened up second by second
@@ -26,6 +26,6 @@
 // # Fuzzy bands
 //
 // A value near the edge of two bands belongs to both, by degree, so 89% is mostly "high" and a
-// little "saturated" rather than flipping between them on one point. The idea, and the shape of
+// little "very_high" rather than flipping between them on one point. The idea, and the shape of
 // the rule files, come from github.com/imp3142/ash, written for MySQL.
 package label

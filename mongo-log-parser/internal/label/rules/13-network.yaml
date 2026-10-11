@@ -7,10 +7,10 @@ rules:
   - name: net.retransmit
     title: "TCP retransmission"
     doc: >-
-      Share of TCP segments the host sent again because the first copy was not acknowledged in
-      time, across every connection on the machine. Above about one percent replication,
-      heartbeats and client replies all slow down, and mongod has no counter of its own that shows
-      it. Minutes that sent fewer than a thousand segments are left out.
+      Ratio of the host TCP RetransSegs counter advance to the OutSegs counter advance, across host
+      connections. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "%"
@@ -19,10 +19,10 @@ rules:
       num: ["systemMetrics/netstat/Tcp:RetransSegs"]
       den: ["systemMetrics/netstat/Tcp:OutSegs"]
     levels:
-      - {name: clean, down: [0.1, 0.3]}
-      - {name: minor, band: [0.1, 0.3, 0.7, 1]}
-      - {name: lossy, band: [0.7, 1, 2, 3]}
-      - {name: severe, up: [2, 3]}
+      - {name: low, down: [0.1, 0.3]}
+      - {name: moderate, band: [0.1, 0.3, 0.7, 1]}
+      - {name: high, band: [0.7, 1, 2, 3]}
+      - {name: very_high, up: [2, 3]}
     elevated: 1
     min_change: 0.5
     pairs_with: [repl.member_lag, net.resets]
@@ -30,8 +30,10 @@ rules:
   - name: net.listen_overflows
     title: "Listen queue overflows"
     doc: >-
-      Connections the kernel dropped a second because mongod's accept queue was full. A client
-      refused here leaves nothing in the server log; any at all is worth explaining.
+      Rate of the host TCP ListenOverflows counter; the counter does not identify a MongoDB connection
+      or client outcome. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "/s"
@@ -47,8 +49,10 @@ rules:
   - name: net.resets
     title: "TCP connections reset"
     doc: >-
-      Established connections reset a second, host-wide. A burst is clients or a load balancer
-      tearing connections down — timeouts, a failover, a proxy recycling its pool.
+      Established connections reset a second, host-wide. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: rate
       unit: "/s"
@@ -59,8 +63,10 @@ rules:
   - name: net.traffic
     title: "mongod network traffic"
     doc: >-
-      Bytes a second in and out of mongod, from its own counters. Shape only: a step is a workload
-      change, a periodic burst a job, and a ceiling the link or an instance's bandwidth limit.
+      Sum of the server's bytesIn and bytesOut counter rates, scaled to MB/s. Minute summaries use a
+      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     signal:
       mode: rate
       unit: "MB/s"

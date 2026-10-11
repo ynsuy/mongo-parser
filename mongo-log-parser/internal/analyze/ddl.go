@@ -34,14 +34,15 @@ func (b IndexBuild) Duration() time.Duration {
 
 // Change is a family of catalogue changes: the same kind of operation on the same namespace.
 type Change struct {
-	Kind        string         `json:"kind"`
-	Namespace   string         `json:"ns,omitempty"`
-	Count       int            `json:"count"`
-	Failures    int            `json:"failures"`
-	First, Last time.Time      `json:"-"`
-	Sources     map[string]int `json:"sources"`
-	Example     string         `json:"example,omitempty"`
-	MaxMillis   float64        `json:"max_millis,omitempty"`
+	Kind      string         `json:"kind"`
+	Namespace string         `json:"ns,omitempty"`
+	Count     int            `json:"count"`
+	Failures  int            `json:"failures"`
+	First     time.Time      `json:"first_at,omitzero"`
+	Last      time.Time      `json:"last_at,omitzero"`
+	Sources   map[string]int `json:"sources"`
+	Example   string         `json:"example,omitempty"`
+	MaxMillis float64        `json:"max_millis,omitempty"`
 }
 
 // maxBuilds bounds the builds one scan keeps. A rebuild of every index of a large deployment is

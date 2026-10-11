@@ -152,6 +152,7 @@ func runSlow(root string, args []string) error {
 		}
 	}
 	first, last := slowWindow(start, end, q, matched)
+	var executionExamples map[string]any
 	if !*noChart && !detail {
 		// With a detail view below, the timeline above the table is the same history drawn twice.
 		if chart := slowTimeline(matched, first, last, *binSeconds, outputWidth(c.width), useColour); chart != "" {
@@ -160,8 +161,10 @@ func runSlow(root string, args []string) error {
 	}
 	if detail {
 		lead := shapes[0]
+		runs := sampled.Of(lead.Namespace, lead.Operation, lead.Plan, lead.ID)
+		executionExamples = slowExecutionExamples(lead, runs, *examples)
 		body := renderShapeDetail(lead, first, last, *binSeconds, outputWidth(c.width), useColour)
-		if runs := sampled.Of(lead.Namespace, lead.Operation, lead.Plan, lead.ID); len(runs) > 0 {
+		if len(runs) > 0 {
 			body += "\n\n" + plural(len(runs), "slowest logged execution") + "\n" + renderExecutions(runs, options)
 		}
 		rendered += "\n\n" + section(detailTitle(lead, len(matched)), body)
@@ -207,7 +210,24 @@ func runSlow(root string, args []string) error {
 		"total_ms":          queries.TotalTime(),
 		"failed_executions": failedRuns, "failed_ms": failedMillis, "failed_by_error": failedByName,
 		"quality": q, "wait_total_ms": waitTotal, "waits": waits,
+		"execution_examples": executionExamples,
 	}, withVersion(rendered+"\n\n"+footer))
+}
+
+// The same executions shown in the terminal are structured evidence, not presentation text.
+// Sampling is deliberately explicit: examples are the slowest retained executions of the lead
+// group, not a representative workload sample or every operation matching the tool's filters.
+func slowExecutionExamples(shape analyze.Shape, executions []analyze.Execution, requested int) map[string]any {
+	if executions == nil {
+		executions = []analyze.Execution{}
+	}
+	return map[string]any{
+		"shape_id": shape.ID, "ns": shape.Namespace, "operation": shape.Operation, "plan": shape.Plan,
+		"grouped_by": shape.GroupedBy, "observed_operations": shape.Count,
+		"first_at": shape.First, "last_at": shape.Last,
+		"sampling":        "Slowest retained executions of the costliest matched group, subject to the sampler's 200-group limit. Not representative or exhaustive; an empty sample does not prove no executions occurred.",
+		"requested_count": requested, "returned_count": len(executions), "executions": executions,
+	}
 }
 
 // waitTotals adds up where the time of a set of shapes went. SlowQueries has the same sum over

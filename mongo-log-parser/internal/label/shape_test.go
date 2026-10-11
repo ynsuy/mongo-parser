@@ -61,7 +61,7 @@ func TestSmallWobbleIsSteadyAndOneMinuteIsASpike(t *testing.T) {
 		return 20
 	}
 	r := find(t, run(samplesFor(2*3600, cpuAt(spike)), "n"), "cpu.busy", "")
-	if r.Shape != "spiky" || r.Spikes != 1 || r.PeakLevel["saturated"] == 0 {
+	if r.Shape != "spiky" || r.Spikes != 1 || r.PeakLevel["very_high"] == 0 {
 		t.Fatalf("one minute at 90%%: shape %s spikes %d peak level %v", r.Shape, r.Spikes, r.PeakLevel)
 	}
 }

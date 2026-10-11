@@ -53,7 +53,8 @@ type Process struct {
 	VersionAt   time.Time `json:"version_reported_at,omitempty"`
 	LastStartAt time.Time `json:"last_start_at,omitempty"`
 
-	FirstAt, LastAt time.Time `json:"-"`
+	FirstAt time.Time `json:"first_at,omitzero"`
+	LastAt  time.Time `json:"last_at,omitzero"`
 
 	versions map[string]bool
 }

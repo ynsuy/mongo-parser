@@ -30,12 +30,12 @@ func TestEveryTimeViewIsInSecondsAMinute(t *testing.T) {
 func TestBandsOverlapRatherThanFlip(t *testing.T) {
 	busy := rule(t, "cpu.busy")
 	got := busy.degrees(91.5)
-	if got["high"] <= 0 || got["saturated"] <= 0 {
-		t.Fatalf("91.5%% should be partly high and partly saturated: %v", got)
+	if got["high"] <= 0 || got["very_high"] <= 0 {
+		t.Fatalf("91.5%% should be partly high and partly very_high: %v", got)
 	}
 	got = busy.degrees(99)
-	if got["saturated"] != 1 || got["high"] != 0 {
-		t.Fatalf("99%% is saturated and only that: %v", got)
+	if got["very_high"] != 1 || got["high"] != 0 {
+		t.Fatalf("99%% is very_high and only that: %v", got)
 	}
 }
 

@@ -33,10 +33,8 @@ The agent starts with the parser report, opens the labels worth opening with `mo
 follows them down to the seconds, the slow query shapes and the log lines. It distinguishes
 supporting evidence from an unconfirmed cause.
 
-The same investigation runs in Claude Code through the plugin in `../plugin`. What pidba adds is
-that the agent has no shell and no file access at all, so no number can come from anywhere but the
-parser, and that the model is chosen per session — OpenAI through a Codex subscription, or a local
-one.
+The agent has no shell and no file access at all, so no number can come from anywhere but the
+parser. The model is chosen per session — OpenAI through a Codex subscription, or a local one.
 
 ## Codex model
 
@@ -85,9 +83,37 @@ Building requires Go. The agent has only the parser tools listed below, with no 
 | `mongo_storage` | How much data there is and how full the mounts holding it are. |
 | `mongo_shell` | What the collector's one-off printouts say: serverStatus, rs.status(), hostInfo, getCmdLineOpts. |
 
-A slow operation and a busy one print the same duration. `mongo_slow` says which it was: when the
-time went on write concern, flow control or a remote shard, the query is not the problem, and the
-FTDC side of the same mechanism is `serverStatus.flowControl` in `mongo_metrics`.
+A slow operation and a busy one can print the same duration. `mongo_slow` summarizes logged timing
+fields; these guide investigation but do not settle cause or exclude query/workload contributions.
+Compare with FTDC only where node identity and time coverage support it.
+
+The model receives a budgeted JSON projection, capped at 32 KiB per tool result, with a bounded
+presentation excerpt where typed data is incomplete. The terminal retains full tables and charts.
+General reports omit the full rule catalogue and operation histories. Label inventory rows retain
+identity, numerical summaries and observed times; detailed bands, episodes and correlations are
+opened on demand. Observed `level`/`peak_level` fuzzy memberships remain in the initial inventory;
+only the reference-band definitions are deferred. Slow-shape summaries keep counts, grouping,
+bounds and numeric evidence; partial
+lists retain aggregate-duration and maximum-duration leaders rather than only high-frequency work.
+Whole-result slow totals remain separate from retained shape lists. `transport.omissions` states
+partial collections and original/returned counts. Missing projected evidence is unknown, never
+zero or normal; narrow by node/time/label/namespace/hash/group for detail. The byte cap is a safety
+bound, not a measured tokenizer count or a guarantee against arbitrary accumulated session history.
+Automatic compaction reserves 16,384 tokens; start a fresh session after an old oversized result.
+
+Focused slow results include structured `execution_examples` with command documents, UTC times,
+source/context and logged waits, independent of the presentation excerpt. They are the slowest
+retained examples of the costliest matched group, not representative of all operations. Observed
+command controls are duplicated in `command_options` so large predicates/documents can shrink
+without hiding a small write/read concern setting. Omissions remain explicit; no defaults are inferred.
+
+Parser descriptions and log-pattern titles report observations, not preset causes or fixes.
+`evidence_policy` accompanies tool data. Log signals separate `review_priority` from actual
+`log_severities` and expose pattern/provenance fields. Incident reporting includes isolated extrema
+alongside main hypotheses; cited slow shapes include observed count and time bounds. A single logged
+slow execution is not a total workload frequency or proof of a recurring problem. Aggregate FTDC
+counters and selected log examples must not be conflated. Model conclusions still require review;
+wording safeguards and unit tests are not end-to-end RCA validation.
 
 ## Comparing nodes
 

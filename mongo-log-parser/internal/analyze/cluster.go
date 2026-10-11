@@ -106,10 +106,11 @@ const maxTransitions = 100
 // Migration is what the chunks of one namespace did over the window. Per node it is a number with
 // no handle on it; per namespace it names the collection whose balancing is the work.
 type Migration struct {
-	Namespace   string    `json:"ns"`
-	Moves       int       `json:"moves"`
-	Failures    int       `json:"failures"`
-	First, Last time.Time `json:"-"`
+	Namespace string    `json:"ns"`
+	Moves     int       `json:"moves"`
+	Failures  int       `json:"failures"`
+	First     time.Time `json:"first_at,omitzero"`
+	Last      time.Time `json:"last_at,omitzero"`
 }
 
 // Cluster folds replication, election and sharding events out of a log stream.

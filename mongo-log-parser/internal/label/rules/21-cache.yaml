@@ -8,9 +8,9 @@ rules:
     title: "WiredTiger cache fill"
     doc: >-
       Bytes in the WiredTiger cache as a share of its configured size, averaged over the minute.
-      Eviction keeps it near 80%; at 95% (eviction_trigger) application threads are made to evict
-      before they may proceed, which turns cache pressure into operation latency. The seconds spent
-      past that line are cache.over_trigger.
+      Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
+      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -21,17 +21,18 @@ rules:
       - {name: low, down: [50, 70]}
       - {name: normal, band: [50, 70, 80, 86]}
       - {name: high, band: [80, 86, 93, 95]}
-      - {name: over_trigger, up: [94, 96]}
+      - {name: above_reference, up: [94, 96]}
     elevated: 95
     min_change: 5
     pairs_with: [cache.over_trigger, cache.app_eviction, cache.read_in]
 
   - name: cache.over_trigger
-    title: "Seconds the cache was past its eviction trigger"
+    title: "Cache-fill samples above 95%"
     doc: >-
-      Seconds of each minute the cache was 95% full or more — past eviction_trigger, where
-      operations are made to evict pages themselves before they may go on. Each of those seconds is
-      latency added to whatever ran in it.
+      Share of valid samples with the signal strictly above 95 %, normalized to a 60-second minute.
+      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
+      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -53,11 +54,9 @@ rules:
     title: "WiredTiger dirty cache"
     doc: >-
       Modified bytes not yet written, as a share of the configured cache, averaged over the minute.
-      Eviction aims for 5%; at 20% (eviction_dirty_trigger) application threads are made to write
-      dirty pages out themselves, and the seconds spent there are cache.dirty_over_trigger.
-      Sustained high dirty cache is a write load the disk or the checkpoint is not keeping up
-      with. From 7.0 the targets can be set in gigabytes at startup
-      (wiredTigerEvictionDirtyTargetGB, wiredTigerEvictionDirtyMaxGB), which moves these lines.
+      Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
+      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -68,17 +67,18 @@ rules:
       - {name: low, down: [3, 6]}
       - {name: normal, band: [3, 6, 8, 12]}
       - {name: high, band: [8, 12, 18, 20]}
-      - {name: over_trigger, up: [19, 21]}
+      - {name: above_reference, up: [19, 21]}
     elevated: 20
     min_change: 3
     pairs_with: [cache.dirty_over_trigger, checkpoint.duration, disk.write_await, ops.writes]
 
   - name: cache.dirty_over_trigger
-    title: "Seconds the dirty cache was past its trigger"
+    title: "Dirty-cache samples above 20%"
     doc: >-
-      Seconds of each minute dirty data was 20% of the cache or more — past eviction_dirty_trigger,
-      where operations are made to write dirty pages out themselves. Writes slow down in exactly
-      these seconds, and the write tickets drain behind them.
+      Share of valid samples with the signal strictly above 20 %, normalized to a 60-second minute.
+      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
+      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -97,9 +97,11 @@ rules:
   - name: cache.app_eviction
     title: "Eviction by application threads"
     doc: >-
-      Pages a second that operations evicted themselves because the eviction workers could not keep
-      the cache under its triggers. Each one is time a query or a write spent doing the storage
-      engine's housekeeping instead of its own work.
+      Rate of pages evicted by application threads; where the version uses attempts and failures, the
+      signal subtracts failure counts from attempt counts. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     until: "8.0.16"
     signal:
       mode: rate
@@ -116,9 +118,11 @@ rules:
   - name: cache.app_eviction
     title: "Eviction by application threads"
     doc: >-
-      Pages a second that operations evicted themselves because the eviction workers could not keep
-      the cache under its triggers — read from 8.0.16 as the attempts that did not fail. Each one is
-      time a query or a write spent doing the storage engine's housekeeping instead of its own work.
+      Rate of pages evicted by application threads; where the version uses attempts and failures, the
+      signal subtracts failure counts from attempt counts. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     since: "8.0.16"
     signal:
       mode: rate
@@ -133,9 +137,10 @@ rules:
   - name: cache.app_eviction_time
     title: "Time operations spent evicting"
     doc: >-
-      Milliseconds a second application threads spent evicting pages, added across every thread
-      doing it (8.0 and later): 1000 is one operation spending the whole second on the storage
-      engine's housekeeping. It is the latency cost of cache pressure, measured directly.
+      Application-thread eviction time counter advance per elapsed second, summed across threads, in
+      milliseconds. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     since: "8.0"
     signal:
       mode: rate
@@ -153,8 +158,10 @@ rules:
   - name: cache.read_in
     title: "Data read into the cache"
     doc: >-
-      Megabytes a second WiredTiger read from disk into its cache. A step up with the same workload
-      is a working set that stopped fitting, or a new scan reading what was never hot.
+      WiredTiger bytes-read-into-cache counter advance per elapsed second, scaled to MB/s. Minute
+      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
+      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "MB/s"
@@ -167,9 +174,10 @@ rules:
   - name: checkpoint.duration
     title: "Checkpoint duration"
     doc: >-
-      Seconds the most recent WiredTiger checkpoint took, read on the longest the minute reported.
-      Checkpoints start every 60 seconds; one that takes longer runs back to back with the next,
-      and dirty data accumulates behind it.
+      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint value
+      may appear in multiple samples. Minute summaries select the highest valid sample. Numeric bands
+      and thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     until: "7.1"
     signal:
       mode: gauge
@@ -188,9 +196,10 @@ rules:
   - name: checkpoint.duration
     title: "Checkpoint duration"
     doc: >-
-      Seconds the most recent WiredTiger checkpoint took, read on the longest the minute reported.
-      Checkpoints start every 60 seconds; one that takes longer runs back to back with the next,
-      and dirty data accumulates behind it.
+      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint value
+      may appear in multiple samples. Minute summaries select the highest valid sample. Numeric bands
+      and thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     since: "7.1"
     signal:
       mode: gauge
@@ -204,10 +213,12 @@ rules:
     pairs_with: [checkpoint.running, cache.dirty, disk.write_await]
 
   - name: checkpoint.running
-    title: "Seconds spent checkpointing"
+    title: "Samples with checkpoint activity"
     doc: >-
-      Seconds of each minute a checkpoint was running. Checkpoints start every 60 seconds; near a
-      full minute they run back to back, and dirty data piles up behind them.
+      Share of valid samples with the signal strictly above 0 running, normalized to a 60-second
+      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
+      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     until: "7.1"
     signal:
       mode: gauge
@@ -224,12 +235,12 @@ rules:
     pairs_with: [checkpoint.duration, disk.saturated, cache.dirty]
 
   - name: checkpoint.running
-    title: "Seconds spent checkpointing"
+    title: "Samples with checkpoint activity"
     doc: >-
-      Seconds of each minute a checkpoint was running. Checkpoints start every 60 seconds; near a
-      full minute they run back to back, and dirty data piles up behind them. From 7.1 WiredTiger
-      reports a checkpoint progress state code instead (0 is inactive), read here as running
-      whenever it is not zero.
+      Share of valid samples with the signal strictly above 0 state, normalized to a 60-second minute.
+      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
+      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     since: "7.1"
     signal:
       mode: gauge
@@ -245,9 +256,10 @@ rules:
   - name: storage.open_handles
     title: "Open data handles"
     doc: >-
-      WiredTiger data handles currently open: roughly one per collection and index in use.
-      Climbing toward the open-file limit ends in "Too many open files" and a fatal WiredTiger
-      panic; many collections and a periodic stats sweep across them is the usual way there.
+      Count reported by WiredTiger for currently open data handles. Minute summaries use a ratio of
+      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: gauge
       unit: "handles"

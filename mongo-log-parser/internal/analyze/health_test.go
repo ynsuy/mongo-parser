@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -27,8 +28,8 @@ func TestHealthNamesTheConditionsNothingElseRanks(t *testing.T) {
 	if !seen || auth.Count != 2 {
 		t.Errorf("auth_failure = %+v, want 2", auth)
 	}
-	if auth.Severity != "warning" {
-		t.Errorf("auth_failure severity = %q, want warning", auth.Severity)
+	if auth.Priority != "medium" || auth.LogSeverities["I"] != 2 || auth.MatchBasis["message_text"] != 2 {
+		t.Errorf("auth_failure must retain logged severity and match provenance: %+v", auth)
 	}
 	if conflict, seen := health.Get("write_conflict"); !seen || conflict.Count != 1 {
 		t.Errorf("write_conflict = %+v, want 1", conflict)
@@ -65,8 +66,40 @@ func TestHealthCountsAFatalLineTheRulesCannotName(t *testing.T) {
 		`{"t":{"$date":"2026-09-03T10:00:00Z"},"s":"F","c":"CONTROL","id":99999,"ctx":"conn1","msg":"Something the rules have never heard of"}`+"\n")
 
 	signal, seen := health.Get("fatal")
-	if !seen || signal.Count != 1 || signal.Severity != "critical" {
-		t.Errorf("fatal = %+v, want one critical", signal)
+	if !seen || signal.Count != 1 || signal.Priority != "high" || signal.LogSeverities["F"] != 1 {
+		t.Errorf("fatal = %+v, want one logged F with high review priority", signal)
+	}
+}
+
+func TestHealthJSONReportsMatchesNotDiagnosedSeverity(t *testing.T) {
+	health := readHealth(t, healthLines)
+	auth, _ := health.Get("auth_failure")
+	raw, err := json.Marshal(auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := data["severity"]; found {
+		t.Fatal("parser review priority must not be serialized as logged severity")
+	}
+	for _, key := range []string{"review_priority", "log_severities", "match_basis", "match_any", "first_at", "last_at"} {
+		if _, found := data[key]; !found {
+			t.Errorf("missing observation provenance: %s", key)
+		}
+	}
+	if !strings.HasSuffix(auth.Title, "text matched") {
+		t.Fatalf("pattern title presents a diagnosis: %q", auth.Title)
+	}
+}
+
+func TestHealthAttributeMatchHasExplicitProvenance(t *testing.T) {
+	health := readHealth(t, `{"t":{"$date":"2026-09-03T10:00:00Z"},"s":"E","c":"NETWORK","id":22988,"ctx":"conn1","msg":"Request failed","attr":{"error":"HostUnreachable"}}`+"\n")
+	signal, found := health.Get("network_error")
+	if !found || signal.MatchBasis["error_attributes"] != 1 || signal.LogSeverities["E"] != 1 {
+		t.Fatalf("attribute evidence lost: %+v", signal)
 	}
 }
 

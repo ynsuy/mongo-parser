@@ -189,6 +189,28 @@ func TestWriteCountedOnce(t *testing.T) {
 
 // TestStatementWithoutEnvelopeStillCounts guards the holding step: a statement whose command line
 // never arrived — a truncated log, a different connection in between — must not be dropped.
+func TestWritePairingDoesNotCrossNodes(t *testing.T) {
+	when := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
+	statement := slowQuery(when, "conn7",
+		`{"type":"update","ns":"app.orders","planSummary":"IDHACK","durationMillis":50}`)
+	statement.Source = "node-a"
+	envelope := slowQuery(when, "conn7",
+		`{"type":"command","ns":"app.$cmd","command":{"update":"orders"},"durationMillis":60}`)
+	envelope.Source = "node-b"
+	s := NewSlowQueries()
+	s.Add(statement)
+	s.Add(envelope)
+	var count int
+	var total float64
+	for _, shape := range s.Shapes() {
+		count += shape.Count
+		total += shape.Duration.Sum
+	}
+	if count != 2 || total != 110 {
+		t.Fatalf("cross-node write pairing: count=%d duration=%v", count, total)
+	}
+}
+
 func TestStatementWithoutEnvelopeStillCounts(t *testing.T) {
 	when := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
 	s := NewSlowQueries()

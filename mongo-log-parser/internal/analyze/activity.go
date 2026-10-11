@@ -26,8 +26,9 @@ type Activity struct {
 	// Records, FirstAt and LastAt are what this pass actually read. They are not the bundle's own
 	// span: under a window they are the window's, and a report that prints the bundle's span over
 	// counts taken from a slice of it invites every figure below to be read against the whole.
-	Records         int       `json:"records"`
-	FirstAt, LastAt time.Time `json:"-"`
+	Records int       `json:"records"`
+	FirstAt time.Time `json:"first_at,omitzero"`
+	LastAt  time.Time `json:"last_at,omitzero"`
 
 	byCategory map[Category]Timeline
 }
@@ -112,7 +113,7 @@ func (a *Activity) TopCategories(limit int) []Category {
 // what happened — only that the log stopped being steady, and when.
 type Burst struct {
 	Category Category  `json:"category"`
-	At       time.Time `json:"-"`
+	At       time.Time `json:"at,omitzero"`
 	Peak     int       `json:"peak"`
 	Baseline float64   `json:"baseline"`
 	Ratio    float64   `json:"ratio"`

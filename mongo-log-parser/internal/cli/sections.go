@@ -169,7 +169,7 @@ func renderChanges(changes []analyze.Change, limit int, options render.TableOpti
 // renderSignals shows the conditions the server logged without ever raising a severity for them.
 func renderSignals(signals []analyze.Signal, limit int, options render.TableOptions) string {
 	if len(signals) == 0 {
-		return "no named conditions fired in this window"
+		return "no configured log-message patterns matched in this window"
 	}
 	shown := signals[:min(limit, len(signals))]
 	text := func(read func(analyze.Signal) string) []string {
@@ -179,11 +179,11 @@ func renderSignals(signals []analyze.Signal, limit int, options render.TableOpti
 		}
 		return values
 	}
-	return render.Table([]render.Column{
-		{Title: "Sev", Values: text(func(s analyze.Signal) string { return s.Severity })},
+	table := render.Table([]render.Column{
+		{Title: "Review", Values: text(func(s analyze.Signal) string { return s.Priority })},
 		{Title: "Condition", Values: text(func(s analyze.Signal) string { return s.Title })},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(s.Count) })},
-		{Title: "Per min", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return render.Compact(s.Rate()) }), Drop: 2},
+		{Title: "Per min*", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return render.Compact(s.Rate()) }), Drop: 2},
 		// When it started is the column that lines a condition up against the charts, so it is the
 		// last one to give way.
 		{Title: "First", Values: text(func(s analyze.Signal) string { return s.First.Format("01-02 15:04") }), Drop: 4},
@@ -191,6 +191,7 @@ func renderSignals(signals []analyze.Signal, limit int, options render.TableOpti
 		{Title: "Nodes", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(len(s.Sources)) }), Drop: 1},
 		{Title: "Look with", Values: text(func(s analyze.Signal) string { return s.Next })},
 	}, options)
+	return table + "\nReview is a fixed navigation priority, not logged severity or incident impact. Rows count text-pattern matches, not confirmed diagnoses.\n* Rate uses the first-to-last matched-record span, with a minimum denominator of one minute; it is not a full-coverage rate."
 }
 
 // renderMigrations names the collections whose chunks moved, which per-node counters cannot.
@@ -353,9 +354,9 @@ func renderWaits(total float64, waits []analyze.Wait, options render.TableOption
 	// cannot tell that apart from the wait being the problem.
 	lead := waits[0]
 	return fmt.Sprintf("%s\n%s ms in total; the largest share is %s — %s.\n"+
-		"The figures overlap slightly, so this is a breakdown and not a partition. A wait can also be "+
-		"downstream of something else: a server that stalls makes every operation in flight report the "+
-		"wait it was in.",
+		"These logged timing fields may overlap and are not a partition of elapsed time. Missing fields "+
+		"are unknown; unaccounted time is a residual calculation, not measured CPU time. "+
+		"The largest share does not establish cause or exclude workload contributions.",
 		table, render.Compact(total), lead.Name, lead.Meaning)
 }
 

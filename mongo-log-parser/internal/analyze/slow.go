@@ -81,12 +81,13 @@ func sumModes(byMode map[string]float64) float64 {
 // Shape is one family of slow queries: same namespace, operation and plan, counted together.
 // MongoDB's logged hash groups them when present; hashless rows are namespace/operation/plan groups.
 type Shape struct {
-	ID          string    `json:"shape_id"`
-	Namespace   string    `json:"ns"`
-	Operation   string    `json:"operation"`
-	Plan        string    `json:"plan"`
-	Count       int       `json:"count"`
-	First, Last time.Time `json:"-"`
+	ID        string    `json:"shape_id"`
+	Namespace string    `json:"ns"`
+	Operation string    `json:"operation"`
+	Plan      string    `json:"plan"`
+	Count     int       `json:"count"`
+	First     time.Time `json:"first_at,omitzero"`
+	Last      time.Time `json:"last_at,omitzero"`
 
 	Duration  Numbers `json:"duration_ms"`
 	Keys      Numbers `json:"keys_examined"`
@@ -317,7 +318,7 @@ func (n Numbers) Quantile(fraction float64) float64 {
 type SlowQueries struct {
 	shapes map[string]*Shape
 	// pending holds write statements waiting for the command envelope that wraps them, keyed by the
-	// log context — that is, by connection. See pendingWrite.
+	// source and log context — connection names are only unique within a node. See pendingWrite.
 	pending map[string]pendingWrite
 }
 
@@ -375,8 +376,9 @@ func (s *SlowQueries) Add(record Record) {
 
 // offer routes one decoded line through the envelope pairing before it becomes a shape.
 func (s *SlowQueries) offer(record Record, attributes slowAttributes) {
-	if held, waiting := s.pending[record.Ctx]; waiting {
-		delete(s.pending, record.Ctx)
+	key := record.Source + "\x00" + record.Ctx
+	if held, waiting := s.pending[key]; waiting {
+		delete(s.pending, key)
 		if wraps(held, record, attributes) {
 			s.count(record, wrapped(held.attributes, attributes))
 			return
@@ -385,7 +387,7 @@ func (s *SlowQueries) offer(record Record, attributes slowAttributes) {
 	}
 	if namespace, ok := writeStatement(attributes); ok {
 		if len(s.pending) < pendingLimit {
-			s.pending[record.Ctx] = pendingWrite{record: record, attributes: attributes, namespace: namespace}
+			s.pending[key] = pendingWrite{record: record, attributes: attributes, namespace: namespace}
 			return
 		}
 	}
@@ -407,6 +409,9 @@ func writeStatement(attributes slowAttributes) (string, bool) {
 // wraps reports whether this line is the command envelope of the statement being held: the same
 // connection, the same collection, and close enough in time to be the same operation.
 func wraps(held pendingWrite, record Record, attributes slowAttributes) bool {
+	if held.record.Source != record.Source || held.record.Ctx != record.Ctx {
+		return false
+	}
 	if attributes.Type != "command" || !strings.HasSuffix(attributes.Namespace, ".$cmd") {
 		return false
 	}
@@ -547,19 +552,19 @@ func (s Shape) Waits() []Wait {
 	}
 	candidates := []Wait{
 		{Name: "flow control", Millis: s.FlowControlWait.Sum, Next: "metrics --metric 'flowControl/*'",
-			Meaning: "time the primary spent throttling its own writers"},
+			Meaning: "sum of logged flowControl timeAcquiringMicros, converted to milliseconds"},
 		{Name: "write concern", Millis: s.WriteConcernWait.Sum, Next: "metrics --metric 'repl/*'",
-			Meaning: "time between the write finishing locally and being acknowledged"},
+			Meaning: "sum of logged waitForWriteConcernDurationMillis"},
 		{Name: "lock acquire", Millis: s.LockWait.Sum, Next: "metrics --metric 'globalLock/*'",
-			Meaning: "time spent waiting for a lock another operation held"},
+			Meaning: "sum of logged lock timeAcquiringMicros, converted to milliseconds"},
 		{Name: "ticket queue", Millis: s.QueueWait.Sum, Next: "metrics --metric 'concurrentTransactions/*' --metric 'queues/execution/*'",
-			Meaning: "time spent queued for admission to the storage engine"},
+			Meaning: "sum of logged queues execution totalTimeQueuedMicros, converted to milliseconds"},
 		{Name: "storage read", Millis: s.StorageWait.Sum, Next: "metrics --metric 'wiredTiger/cache/*'",
-			Meaning: "time spent reading pages that were not in cache"},
+			Meaning: "sum of logged storage data timeReadingMicros and timeWaitingMicros, converted to milliseconds"},
 		{Name: "remote shards", Millis: s.RemoteWait.Sum, Next: "slow on the shard's own logs",
-			Meaning: "time a router spent waiting on shards; this log cannot say which one"},
+			Meaning: "sum of logged remoteOpWaitMillis; no shard identity inferred"},
 		{Name: "cpu", Millis: s.CPU.Sum, Next: "-",
-			Meaning: "time the operation spent on cpu rather than waiting"},
+			Meaning: "sum of logged cpuNanos, converted to milliseconds"},
 	}
 	waits := make([]Wait, 0, len(candidates)+1)
 	accounted := 0.0
@@ -590,7 +595,7 @@ func (s Shape) Waits() []Wait {
 // UnaccountedWait is the row for the time no named wait accounts for, before its figures are set.
 func UnaccountedWait() Wait {
 	return Wait{Name: "unaccounted", Next: "report --only labels,activity",
-		Meaning: "time the log line does not break down: plan execution, yields, and whatever the server was not running for"}
+		Meaning: "positive residual of logged duration minus summed named wait fields; not a measured activity or a cause"}
 }
 
 // Waited reports whether this shape spent a meaningful part of its time on something other than

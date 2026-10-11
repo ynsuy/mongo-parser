@@ -93,7 +93,7 @@ func formula(r label.Rule) string {
 	if s.Complement {
 		text = fmt.Sprintf("%g − (%s)", s.Scale, text)
 	}
-	text += ", in " + s.Unit + ", every second"
+	text += ", in " + s.Unit + ", at each available sample"
 	if s.MinDen > 0 {
 		text += fmt.Sprintf("; minutes where the divisor sums to under %g are left out", s.MinDen)
 	}
@@ -107,13 +107,13 @@ func formula(r label.Rule) string {
 func readOn(r label.Rule) string {
 	switch r.View {
 	case label.ViewMax:
-		return "the highest second of each minute"
+		return "the highest valid sample of each minute"
 	case label.ViewMin:
-		return "the lowest second of each minute"
+		return "the lowest valid sample of each minute"
 	case label.ViewTimeAbove:
-		return fmt.Sprintf("seconds of each minute above %g %s", *r.Threshold, r.Signal.Unit)
+		return fmt.Sprintf("valid-sample share strictly above %g %s, normalized to 60 s/min; not continuous elapsed time", *r.Threshold, r.Signal.Unit)
 	case label.ViewTimeBelow:
-		return fmt.Sprintf("seconds of each minute below %g %s", *r.Threshold, r.Signal.Unit)
+		return fmt.Sprintf("valid-sample share strictly below %g %s, normalized to 60 s/min; not continuous elapsed time", *r.Threshold, r.Signal.Unit)
 	}
 	if len(r.Signal.Den) > 0 {
 		return "each minute's ratio of sums"

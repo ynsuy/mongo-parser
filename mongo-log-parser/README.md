@@ -14,15 +14,27 @@ bin/mongo-log-parser labels                       # the rule book
 
 ## How an investigation narrows
 
-The labels are where it starts. Every metric of every node is read against a rule — a YAML file in
+Labels help navigation. Metrics covered by the catalogue are read against a definition — a YAML file in
 `internal/label/rules` — and described by its level, its shape and when it changed. The report lays
-them out as worth opening, worth noticing, and ordinary. `label` opens one: the seconds it spent past
-its mark, the labels its rule pairs with read over those same seconds, the labels that moved with it,
+them out as worth opening, worth noticing, and ordinary. `label` opens one: observed samples past
+its reference, the labels its definition pairs with over those same samples, measured correlations,
 and what the node's log said in the window. `--at` reads a window second by second, and `lines`
 prints the log lines themselves.
 
 The parser labels and does not diagnose. Why something happened is for whoever reads the labels
 beside the logs.
+
+Descriptions report measurements, derived values and their support, never preset causes or fixes.
+Numeric bands, thresholds and review priorities are fixed navigation references, not incident
+severity or discovered server limits. Legacy IDs such as `cpu.saturated` and `cache.over_trigger`
+remain stable identifiers; their titles and descriptions specify the actual numerical observation.
+Time views report normalized valid-sample shares, not continuous elapsed durations. Log signals
+report text-pattern matches with match conditions, message/attribute provenance and actual logged
+severity counts. `review_priority` replaces the former parser-assigned signal `severity` field;
+it is a sorting aid, not MongoDB severity or customer impact. Band names are descriptive magnitude
+terms; numeric membership and ranking thresholds are unchanged.
+
+Every JSON envelope carries `evidence_policy`; raw customer text remains unchanged and untrusted.
 
 ## Layout
 
@@ -42,7 +54,7 @@ A rule names its FTDC paths, what one second's value is (`signal`), which summar
 bands are read on (`view`: `mean`, `max`, `min`, or `time_above` / `time_below` a `threshold`), its
 fuzzy bands, the labels it `pairs_with`, and the labels that must agree before it is worth opening
 (`open_with`). A burst that a minute mean would hide — a ticket pool
-empty for ten seconds — is counted in seconds instead. A field MongoDB renamed is a second definition
+empty in individual samples — uses normalized valid-sample shares instead. A field MongoDB renamed is a second definition
 of the same label with its own `since` / `until`.
 
 The rules are checked when the binary starts: an unknown field, a band that leaves a gap, a time view
@@ -60,5 +72,5 @@ Every rule, its signal, its bands and what it pairs with is laid out for review 
 
 `scripts/build.sh` stamps the binary with `scripts/version.sh`: the nearest `mongo-log-parser/vX.Y.Z`
 tag and how far past it the tree is, or the baseline version and a fingerprint of the sources when
-there is no git. `mongo-log-parser version` prints it; the plugin and pidba both check it, because a
+there is no git. `mongo-log-parser version` prints it; pidba displays it, because a
 stale binary answers in the same format as a current one.

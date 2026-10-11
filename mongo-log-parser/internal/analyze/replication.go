@@ -41,7 +41,8 @@ const (
 // started, or a member has no log in the bundle and nobody was watching it. Filling it in with the
 // last state seen is what reported a set as having no writable node when it had one all along.
 type StateSpan struct {
-	From, To time.Time `json:"-"`
+	From     time.Time `json:"from,omitzero"`
+	To       time.Time `json:"to,omitzero"`
 	State    string    `json:"state,omitempty"`
 	Evidence Evidence  `json:"evidence"`
 	// Changes is how many state changes happened inside this span's bin once it has been binned for
@@ -517,12 +518,12 @@ type SetSummary struct {
 	// enough to say so, and GapStarted is when it began. TotalGap adds every such stretch up.
 	LongestGap time.Duration `json:"longest_no_primary"`
 	TotalGap   time.Duration `json:"total_no_primary"`
-	GapStarted time.Time     `json:"-"`
+	GapStarted time.Time     `json:"gap_started_at,omitzero"`
 
 	// LastPrimary is the member seen in PRIMARY latest, when, and how that is known. An empty
 	// member means no log in this bundle ever saw one.
 	LastPrimary   string    `json:"last_primary,omitempty"`
-	LastPrimaryAt time.Time `json:"-"`
+	LastPrimaryAt time.Time `json:"last_primary_at,omitzero"`
 	LastPrimaryBy Evidence  `json:"last_primary_evidence,omitempty"`
 	// Unwatched is how much of the window nothing was watching the set at all, which is the part
 	// none of the above can speak for.
@@ -532,7 +533,7 @@ type SetSummary struct {
 	// report a maintenance window as an outage.
 	Stopped     time.Duration `json:"stopped"`
 	LongestStop time.Duration `json:"longest_stop"`
-	StoppedFrom time.Time     `json:"-"`
+	StoppedFrom time.Time     `json:"stopped_from,omitzero"`
 	// Partial is set when any member of the set changed state more often than was recorded, so
 	// everything above is a floor rather than a figure.
 	Partial bool `json:"history_partial,omitempty"`

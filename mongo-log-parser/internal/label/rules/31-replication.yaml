@@ -10,11 +10,11 @@ rules:
   - name: repl.member_lag
     title: "Member replication lag"
     doc: >-
-      How many seconds each member's last applied write trailed the newest write any member had, as
-      this node's replSetGetStatus reported them — one result per member, read on the worst second
-      of each minute. A lagging member is usually short of disk or CPU, applying a large batch, or
-      syncing across a slow link. Members are numbered by their place in the replica set config; an
-      arbiter has no optime and gets no result. Before 6.0 optimeDate has one-second resolution.
+      Difference between each member's reported applied-write timestamp and the newest such timestamp
+      in this node's replica-set status, scaled to seconds. Members without a timestamp have no
+      result. optimeDate has one-second resolution. Minute summaries select the highest valid sample.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     until: "6.0"
     signal:
       mode: gauge
@@ -35,11 +35,11 @@ rules:
   - name: repl.member_lag
     title: "Member replication lag"
     doc: >-
-      How many seconds each member's last applied write trailed the newest write any member had, as
-      this node's replSetGetStatus reported them — one result per member, read on the worst second
-      of each minute. A lagging member is usually short of disk or CPU, applying a large batch, or
-      syncing across a slow link. Members are numbered by their place in the replica set config; an
-      arbiter has no optime and gets no result.
+      Difference between each member's reported applied-write timestamp and the newest such timestamp
+      in this node's replica-set status, scaled to seconds. Members without a timestamp have no
+      result. Minute summaries select the highest valid sample. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     since: "6.0"
     signal:
       mode: gauge
@@ -56,10 +56,10 @@ rules:
   - name: repl.majority_lag
     title: "Majority commit lag"
     doc: >-
-      Seconds between the newest write this node applied and the newest write a majority had
-      (lastAppliedWallTime less lastCommittedWallTime), read on the worst second of each minute. It
-      is what w:majority writes wait for and what flow control throttles on; it grows when enough
-      secondaries fall behind.
+      Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to seconds.
+      Minute summaries select the highest valid sample. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     since: "4.2"
     signal:
       mode: gauge
@@ -77,11 +77,12 @@ rules:
     pairs_with: [repl.member_lag, flow.throttled, latency.writes]
 
   - name: flow.throttled
-    title: "Seconds flow control was engaged"
+    title: "Samples with flowControl.isLagged set"
     doc: >-
-      Seconds of each minute flow control reported the set lagged and limited writes on the
-      primary. Any of it means writers were held back on purpose because the majority fell behind.
-      Meaningful on a primary with flow control enabled; a secondary reports it unset.
+      Share of valid samples with the signal strictly above 0 lagged, normalized to a 60-second
+      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
+      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "lagged"
@@ -99,8 +100,10 @@ rules:
   - name: flow.wait
     title: "Time writers waited on flow control"
     doc: >-
-      Milliseconds a second writes spent waiting for flow control tickets on this node, added
-      across every write waiting.
+      Milliseconds a second writes spent waiting for flow control tickets on this node, added across
+      every write waiting. Minute summaries use a ratio of sums for ratio signals and a mean
+      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
+      discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ms/s"
@@ -117,8 +120,10 @@ rules:
   - name: repl.apply_rate
     title: "Oplog entries applied"
     doc: >-
-      Operations a second this node applied from the oplog, as a secondary. A drop to nothing while
-      the buffer holds entries is an applier that is stuck, not slow.
+      Rate of the node's oplog application operation counter. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     direction: down
     signal:
       mode: rate
@@ -132,8 +137,10 @@ rules:
   - name: repl.buffer_fill
     title: "Apply buffer fill"
     doc: >-
-      Share of the replication apply buffer in use on a secondary, averaged over the minute. Full,
-      the node fetches faster than it applies — it is behind on disk or CPU, not on the network.
+      Reported replication buffer bytes as a share of its reported maximum. Minute summaries use a
+      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     until: "8.0"
     signal:
       mode: gauge
@@ -152,8 +159,10 @@ rules:
   - name: repl.buffer_fill
     title: "Apply buffer fill"
     doc: >-
-      Share of the replication apply buffer in use on a secondary, averaged over the minute. Full,
-      the node fetches faster than it applies — it is behind on disk or CPU, not on the network.
+      Reported replication buffer bytes as a share of its reported maximum. Minute summaries use a
+      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     since: "8.0"
     signal:
       mode: gauge
@@ -167,10 +176,12 @@ rules:
     pairs_with: [repl.buffer_full, repl.apply_rate, repl.member_lag]
 
   - name: repl.buffer_full
-    title: "Seconds the apply buffer was nearly full"
+    title: "Apply-buffer samples above 90%"
     doc: >-
-      Seconds of each minute the replication apply buffer was 90% full or more. While it is, the
-      node stops fetching until the applier catches up.
+      Share of valid samples with the signal strictly above 90 %, normalized to a 60-second minute.
+      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
+      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     until: "8.0"
     signal:
       mode: gauge
@@ -190,10 +201,12 @@ rules:
     pairs_with: [repl.buffer_fill, repl.apply_rate]
 
   - name: repl.buffer_full
-    title: "Seconds the apply buffer was nearly full"
+    title: "Apply-buffer samples above 90%"
     doc: >-
-      Seconds of each minute the replication apply buffer was 90% full or more. While it is, the
-      node stops fetching until the applier catches up.
+      Share of valid samples with the signal strictly above 90 %, normalized to a 60-second minute.
+      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
+      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     since: "8.0"
     signal:
       mode: gauge

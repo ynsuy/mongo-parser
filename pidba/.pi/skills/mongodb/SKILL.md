@@ -15,9 +15,10 @@ Run it first on an unfamiliar bundle: a gap in coverage changes what every count
 question about a window nobody logged has no answer.
 
 `mongo_report` then reads the whole bundle in one pass. Run it before any narrower tool, without a
-time window unless the user gave one. Its labels worth opening decide where to look next: open them
-with `mongo_label`, which says exactly which seconds a label was past its mark, what the labels it
-pairs with did in those seconds, and what the node's log said then. The slow query table and the
+time window unless the user gave one. Its labels are navigation summaries, not diagnoses: open them
+with `mongo_label`, which shows the samples past its mark, what the labels it
+pairs with did in those samples, and what the node's log said then. Check sampling cadence and gaps
+before interpreting sample counts as elapsed duration. The slow query table and the
 replication summary sit beside them; a category list is a navigation aid, not the set of things
 that can be wrong.
 
@@ -29,9 +30,8 @@ bundle whose logs were rotated past the last restart will say it cannot tell you
 
 - Slow operations, before anything about the query itself → the "where the time went" breakdown
   under `mongo_slow`. An operation that waited and one that worked print the same duration. If the
-  time went on write concern, flow control or remote shards, the query is not the problem and
-  examining it further is wasted work; follow the wait instead, with `waited_on` to isolate the
-  shapes it applies to.
+  logged timing fields show write concern, flow control or remote waits, inspect that evidence
+  with `waited_on` to isolate shapes. It does not rule out query or workload contributions.
 - A costly namespace or plan → `mongo_slow` with `ns`, `plan` or `query_hash`. Narrowing this way
   also returns the distribution and the charts for the costliest shape it kept. Read the spread
   before quoting an average: min, p50, p95 and max say whether a shape is reliably slow or usually
@@ -39,10 +39,10 @@ bundle whose logs were rotated past the last restart will say it cannot tell you
   the percentiles are approximate and the parser says so. The drill-down also returns the slowest
   real executions with their command documents: read the predicate before saying anything about
   indexes, and quote the shape rather than describing it.
-- A build or a drop near the window → `mongo_ddl`. An index build holds a very visible lock at the
-  end of its life, and nothing in FTDC names it.
+- A build or a drop near the window → `mongo_ddl`. Inspect logged phases and outcomes; timing
+  alone does not establish that an index build caused contention.
 - A condition worth a rate rather than a count → `mongo_health`. A thousand authentication failures
-  a minute is a client misconfiguration; ten over two days is nothing.
+  a minute warrants investigation, but neither a high nor a low count establishes cause or impact.
 - A metric worth seeing at full width → `mongo_metrics` with the exact metric path from a report.
 - The same metric on several nodes → `mongo_metrics` with several `sources`. They are read over one
   window and share a value axis, so their magnitudes are comparable; `overlay` puts them on one
@@ -72,11 +72,11 @@ log activity chart. Similar timing supports correlation; it does not prove cause
 Where `mongo_report` has already measured a coincidence between two histories, that measurement is
 the evidence — quote its share and its window rather than restating the halves, and do not attempt
 one of your own from numbers in two tables. A version history from `mongo_deployment` belongs in the
-same line-up: a rollback and a stepdown storm in the same minute are one event, not two.
+same line-up: nearby rollback and stepdown events may be related, but keep their identities distinct
+until evidence establishes the relationship.
 
-Two signals that describe the same mechanism are one observation, not two. Flow control in the slow
-query breakdown and `flowControl.targetRateLimit` in FTDC are the same thing seen from two files;
-report them as one finding with two sources, not as corroboration.
+Avoid double-counting related evidence. Logged flow-control wait and an FTDC rate-limit metric
+measure different aspects of a mechanism; compare them only with confirmed node and time alignment.
 
 A node's identity is settled when the bundle is read: rotations of one log and the FTDC written
 beside them are tied to the node the lines name themselves after, and `mongo_coverage` says on what
@@ -90,3 +90,17 @@ plain text, not an image; keep its scale, timestamps, names and values exactly a
 
 State what is missing when the evidence stops short of a cause, and name the artifact that would
 settle it.
+
+Review both open and notice findings and retain isolated observed extrema in a compact inventory,
+even when they are not the main hypothesis. State samples/counts and timestamps, not inferred
+continuous duration from a binned chart. For a cited slow shape, always include its observed count
+and grouping basis; one observed slow execution does not establish recurrence or the total workload
+frequency. Aggregate FTDC counters and a selected slow-log example are different populations.
+Keep ranked findings separate from causal reasoning and from remediation recommendations.
+
+Read structured `execution_examples` and their observed `command_options` before declaring an
+operation setting unknown. Examples describe sampled executions, not every operation or a default.
+If transport omitted commands, retrieve narrower examples or raw lines and distinguish not
+retrieved from not present. Before finalizing, reconcile each returned open/notice row by label,
+source and instance with a reported observation or explicit deferral. State explicitly when a
+cited execution precedes/follows FTDC coverage and cannot be correlated with those metrics.

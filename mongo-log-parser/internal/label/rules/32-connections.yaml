@@ -6,11 +6,12 @@ description: >-
 rules:
 
   - name: connections.used
-    title: "Connection limit in use"
+    title: "Current connections as a share of current plus available"
     doc: >-
-      Open connections as a share of the most the server will accept (current over current plus
-      available), averaged over the minute. Near the limit new clients are refused, and the log
-      says so; the seconds spent there are connections.scarce.
+      Reported current connections divided by current plus available connections. Minute summaries use
+      a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -27,10 +28,12 @@ rules:
     pairs_with: [connections.scarce, connections.created, connections.rejected]
 
   - name: connections.scarce
-    title: "Seconds with under 10% of connections left"
+    title: "Samples with under 10% of connections left"
     doc: >-
-      Seconds of each minute fewer than a tenth of the connection limit was still available. A
-      reconnect storm can hit the limit for a few seconds and leave a minute mean looking calm.
+      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
+      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
+      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "% available"
@@ -52,9 +55,10 @@ rules:
   - name: connections.created
     title: "New connections"
     doc: >-
-      Connections opened a second. Drivers keep a pool, so a steady few is normal; tens a second is
-      clients reconnecting, usually after timeouts, or an application opening a client per
-      request. Each one costs the server a thread and an authentication.
+      Rate of the server's totalCreated connection counter. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: rate
       unit: "conn/s"
@@ -62,7 +66,7 @@ rules:
     levels:
       - {name: quiet, down: [1, 3]}
       - {name: normal, band: [1, 3, 10, 20]}
-      - {name: storm, up: [10, 20]}
+      - {name: high, up: [10, 20]}
     elevated: 20
     min_change: 5
     pairs_with: [connections.current, cpu.kernel_share, net.resets]
@@ -71,13 +75,12 @@ rules:
   # monitoring connections parked in an awaitable hello (awaitingTopologyChanges). They are not work,
   # so they are taken out of both labels below.
   - name: connections.idle
-    title: "Open connections doing nothing"
+    title: "Derived non-active connection count"
     doc: >-
-      Open connections with no operation in progress, leaving out drivers' monitoring connections,
-      averaged over the minute. Most of a client pool is idle on any healthy server, so the share
-      says little; the count is what costs: every connection holds a thread and memory on the
-      server. Thousands of them is a pool sized far past what the workload uses, or one that grew
-      during a stall and never shrank.
+      Derived connection count: current plus awaitingTopologyChanges minus active; it is not evidence
+      of unused client pools or a connection leak. Minute summaries use a ratio of sums for ratio
+      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
+      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     since: "4.4"
     signal:
       mode: gauge
@@ -87,19 +90,18 @@ rules:
     levels:
       - {name: few, down: [300, 800]}
       - {name: many, band: [300, 800, 1500, 2500]}
-      - {name: excessive, up: [1500, 3000]}
+      - {name: very_high, up: [1500, 3000]}
     elevated: 2000
     min_change: 100
     pairs_with: [connections.current, connections.created, connections.working_share, memory.heap_outside_cache]
 
   - name: connections.working_share
-    title: "Open connections with an operation in progress"
+    title: "Derived active-connection share"
     doc: >-
-      Share of the open connections with an operation in progress, leaving out drivers' monitoring
-      connections, at the worst second of each minute. It stays low on a healthy server, because
-      operations finish faster than they arrive; when the server stalls, every operation in flight
-      waits and the share jumps. A pile-up here beside empty ticket pools or queued operations is a
-      stall seen from the client side.
+      Derived active-connection share: active minus awaitingTopologyChanges divided by current
+      connections. Minute summaries select the highest valid sample. Numeric bands and thresholds are
+      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     since: "4.4"
     signal:
       mode: gauge
@@ -113,7 +115,7 @@ rules:
     levels:
       - {name: calm, down: [10, 25]}
       - {name: busy, band: [10, 25, 40, 60]}
-      - {name: piled_up, up: [40, 60]}
+      - {name: high, up: [40, 60]}
     elevated: 40
     min_change: 10
     pairs_with: [tickets.read.empty, tickets.write.empty, queue.readers, queue.writers, connections.created]
@@ -121,8 +123,10 @@ rules:
   - name: connections.current
     title: "Open connections"
     doc: >-
-      Connections open to this node. Shape only — the limit is in connections.used. A step is a
-      deployment or a pool resize; a climb that never comes down is a client leaking connections.
+      Count reported for currently open server connections. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: gauge
       unit: "conns"
@@ -133,8 +137,10 @@ rules:
   - name: connections.rejected
     title: "Connections refused"
     doc: >-
-      Connections mongod refused a second because it was at its limit (6.3 and later). Each one is
-      a client error the application saw.
+      Rate of the server's rejected connection counter; client impact and rejection cause are not
+      inferred. Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric
+      bands and thresholds are fixed descriptive references, not a diagnosis or a discovered server
+      limit. Paired labels are navigation links, not causal claims.
     since: "6.3"
     signal:
       mode: rate

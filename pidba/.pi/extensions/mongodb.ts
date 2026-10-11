@@ -7,6 +7,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { selectPath, directory } from "../lib/data-path.js";
+import { parserResult, type ParserReport } from "../lib/tool-result.js";
 import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
 
 const runFile = promisify(execFile);
@@ -86,7 +87,7 @@ function installCompactChrome(ctx: ExtensionContext): void {
   }));
 }
 
-type Report = { command: string; bundle: string; data: Record<string, unknown>; render: string };
+type Report = ParserReport;
 
 function arg(name: string, value: unknown): string[] {
   return value === undefined || value === null || value === "" ? [] : [`--${name}`, String(value)];
@@ -106,17 +107,16 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
       signal,
       maxBuffer: 128 * 1024 * 1024,
     });
-    return JSON.parse(stdout) as Report;
+    return { ...JSON.parse(stdout), requested_args: args } as Report;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "unknown";
     throw new Error(`parser failed (${code}); check the selected directory and parser installation locally.`);
   }
 }
 
-// The parser already drew the tables and charts; the model relays that text instead of inventing
-// a rendering of its own, and reads the structured data beside it when it needs numbers.
+// Send structured evidence to the model while preserving the parser's terminal presentation.
 function result(report: Report) {
-  return { content: [{ type: "text" as const, text: report.render }], details: { data: report } };
+  return parserResult(report, bundleVersion);
 }
 
 type ToolResult = { isError?: boolean; details?: { data?: Report } };
@@ -246,7 +246,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_label",
     label: "MongoDB label opened",
-    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst single second, every stretch of seconds it spent past its mark, longest first, with exact start and end times, and for the longest few windows: the labels the rule pairs with, read over exactly those seconds beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window second by second, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_over_trigger, disk.await.",
+    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst sample, stretches of samples past its mark, longest first, with observed timestamps; elapsed durations require cadence and gap checks, and for the longest few windows: the labels the rule pairs with, read over those samples beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window sample by sample, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_over_trigger, disk.await.",
     parameters: Type.Object({
       label: Type.String({ description: "The label to open, as the report printed it, e.g. tickets.read.empty" }),
       source: Type.Optional(Type.String({ description: "The node to open it on, as the report printed it. Every node that has the label by default." })),
@@ -335,7 +335,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_slow",
     label: "MongoDB slow queries",
-    description: "Rank slow query shapes by the total time they cost the server, with count, average, p95 and maximum duration, documents and keys examined, inefficiency (documents read per document returned), bytes read, and what each shape mostly waited for. Under the table, a breakdown of where the time went across the whole workload: flow control, write concern, lock acquire, ticket queue, storage read, remote shards, cpu, and what the log did not account for. A slow operation that waited and one that did work print the same duration and are different problems, so read the breakdown before blaming a query. Naming a filter — ns, plan, query_hash or waited_on — also adds a drill-down for the costliest shape it kept: a duration chart (min, average and worst per bin), an executions chart, the full distribution of every measure with min, average, p50, p95, p99, max and total, and the slowest real logged executions with the command document each one ran. That is the view to use once the ranking has told you which shape to look at, because a single average cannot tell an operation that is reliably slow from one that is usually fine with a bad tail. Query hashes are the original logged values. Rows without a hash are namespace/operation/plan groups, not known query shapes.",
+    description: "Rank slow query shapes by summed logged elapsed duration, with count, average, p95 and maximum duration, documents and keys examined, documents examined per document returned, bytes read, and what each shape mostly waited for. Under the table, summed timing fields across observed slow operations: flow control, write concern, lock acquire, ticket queue, storage read, remote shards, cpu, and what the log did not account for. Timing fields may overlap or be absent and do not establish cause. Always report the observed count and time bounds; a single slow execution does not establish recurrence or total workload frequency. Naming a filter — ns, plan, query_hash or waited_on — also adds a drill-down for the costliest shape it kept: a duration chart (min, average and worst per bin), an executions chart, the full distribution of every measure with min, average, p50, p95, p99, max and total, and the slowest real logged executions with the command document each one ran. That is the view to use once the ranking has told you which shape to look at, because a single average cannot tell an operation that is reliably slow from one that is usually fine with a bad tail. Query hashes are the original logged values. Rows without a hash are namespace/operation/plan groups, not known query shapes.",
     parameters: Type.Object({
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many shapes to show" })),
       plan: Type.Optional(Type.String({ description: "COLLSCAN, IXSCAN, IDHACK, COUNT or EOF" })),
@@ -396,7 +396,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_storage",
     label: "MongoDB data size",
-    description: "How much data there is and where it sits: the size of each mount the server's files are on, how full it is, and what the collector recorded for them, together with the index rebuilds that would have to re-read it. Disk that is nearly full explains a class of failures nothing else in the logs names.",
+    description: "How much data there is and where it sits: the size of each mount the server's files are on, how full it is, and what the collector recorded for them, together with the index rebuilds that would have to re-read it. Mount utilization is an observation, not a diagnosed failure.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
       return result(await run("storage", [], signal));
@@ -451,7 +451,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_health",
     label: "MongoDB logged conditions",
-    description: "The conditions MongoDB logs at severity I and therefore never ranks by severity: authentication failures, write conflicts, lock timeouts, cursors reaped, operations killed, heartbeat failures, members reported unreachable, stale routing tables, jumbo chunks, connection churn, storage operations that took too long, clock skew. Each with a count, a rate per minute, when it started and stopped, how many nodes saw it, and what to look at next. These are the things a thousand of which is a problem and one of which is nothing, so read the rate rather than the count. A condition here is a pattern in the message text, not a verdict: confirm it with mongo_logs before acting on it.",
+    description: "The conditions MongoDB logs at severity I and therefore never ranks by severity: authentication failures, write conflicts, lock timeouts, cursors reaped, operations killed, heartbeat failures, members reported unreachable, stale routing tables, jumbo chunks, connection churn, storage operations that took too long, clock skew. Each with a count, a rate per minute, when it started and stopped, how many nodes saw it, and what to look at next. Counts and rates do not establish impact or cause; review_priority is a navigation aid, not logged severity. Rows expose match patterns, match provenance and actual logged severity counts. A condition here is a pattern in the message text, not a verdict: confirm it with mongo_logs before acting on it.",
     parameters: Type.Object({
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many conditions to show" })),
       ...windowFlags,

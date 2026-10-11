@@ -17,14 +17,20 @@ import (
 
 // Signal is one named condition, counted over the window.
 type Signal struct {
-	Key         string         `json:"key"`
-	Title       string         `json:"title"`
-	Severity    string         `json:"severity"` // critical, warning or note
-	Count       int            `json:"count"`
-	First, Last time.Time      `json:"-"`
-	Sources     map[string]int `json:"sources"`
-	Example     string         `json:"example,omitempty"`
-	Next        string         `json:"next,omitempty"`
+	Key           string         `json:"key"`
+	Title         string         `json:"title"`
+	Priority      string         `json:"review_priority"` // high, medium or low; not server severity or impact
+	LogSeverities map[string]int `json:"log_severities"`
+	MatchBasis    map[string]int `json:"match_basis"`
+	MatchAny      []string       `json:"match_any,omitempty"`
+	MatchAll      []string       `json:"match_all,omitempty"`
+	MatchNot      []string       `json:"match_not,omitempty"`
+	Count         int            `json:"count"`
+	First         time.Time      `json:"first_at,omitzero"`
+	Last          time.Time      `json:"last_at,omitzero"`
+	Sources       map[string]int `json:"sources"`
+	Example       string         `json:"example,omitempty"`
+	Next          string         `json:"next,omitempty"`
 }
 
 // Rate is how often this happened per minute over the span it was seen.
@@ -52,70 +58,70 @@ type rule struct {
 // rules are ordered: the first that matches names the line. A more specific condition therefore
 // comes before the general one it would otherwise be swallowed by.
 var rules = []rule{
-	{key: "assertion", title: "process-level assertion or fatal signal", severity: "critical",
+	{key: "assertion", title: "assertion, signal or termination text matched", severity: "high",
 		next: "logs --category other",
 		any:  []string{"fassert", "invariant failure", "terminate() called", "got signal", "aborting after", "unhandled exception"}},
-	{key: "disk", title: "storage refused a write", severity: "critical", next: "logs --category storage",
+	{key: "disk", title: "storage error text matched", severity: "high", next: "logs --category storage",
 		any: []string{"no space left", "disk full", "quota exceeded", "input/output error", "read-only file system"}},
-	{key: "oom", title: "allocation failed or the kernel reclaimed memory", severity: "critical",
+	{key: "oom", title: "allocation or out-of-memory text matched", severity: "high",
 		next: "metrics --metric 'system/memory/*'",
 		any:  []string{"out of memory", "cannot allocate memory", "bad_alloc", "oom"}},
-	{key: "too_stale", title: "a member fell off the sync source's oplog", severity: "critical",
+	{key: "too_stale", title: "staleness or rollback-size text matched", severity: "high",
 		next: "logs --category replication",
 		any:  []string{"too stale", "rollback too large", "we are too far behind"}},
-	{key: "rollback_files", title: "rollback wrote documents to a file instead of applying them", severity: "warning",
+	{key: "rollback_files", title: "rollback-file text matched", severity: "medium",
 		next: "logs --category recovery", any: []string{"rollback file", "writing rollback file"}},
-	{key: "heartbeat", title: "heartbeats to a member failed", severity: "warning",
+	{key: "heartbeat", title: "heartbeat failure or retry text matched", severity: "medium",
 		next: "logs --category replication",
 		all:  []string{"heartbeat"}, any: []string{"fail", "error", "timed out", "timeout", "retries"}},
-	{key: "member_unreachable", title: "a member was reported unreachable", severity: "warning",
+	{key: "member_unreachable", title: "member reachability or primary-selection text matched", severity: "medium",
 		next: "logs --category replication",
 		any:  []string{"is now in state rs_down", "is now in state rs_unknown", "no primary detected", "could not find host matching read preference"}},
-	{key: "auth_failure", title: "authentication was refused", severity: "warning",
+	{key: "auth_failure", title: "authentication failure or unknown-user text matched", severity: "medium",
 		next: "logs --category authentication",
 		any:  []string{"authentication failed", "failed to authenticate", "auth: something", "supported sasl mechanisms requested for unknown user"}},
-	{key: "unauthorized", title: "a command was refused for lack of privilege", severity: "note",
+	{key: "unauthorized", title: "authorization refusal text matched", severity: "low",
 		next: "logs --category authentication", any: []string{"not authorized on", "unauthorized"}},
-	{key: "write_conflict", title: "writes collided and were retried", severity: "warning",
+	{key: "write_conflict", title: "write-conflict text matched", severity: "medium",
 		next: "slow", any: []string{"writeconflict", "write conflict"}},
-	{key: "transaction_abort", title: "transactions were aborted", severity: "note",
+	{key: "transaction_abort", title: "transaction abort text matched", severity: "low",
 		next: "logs --category other", all: []string{"transaction"}, any: []string{"abort"}},
-	{key: "lock_timeout", title: "an operation gave up waiting for a lock", severity: "warning",
+	{key: "lock_timeout", title: "lock-acquisition or lock-error text matched", severity: "medium",
 		next: "metrics --metric 'globalLock/*'",
 		any:  []string{"lock acquisition", "lockbusy", "locktimeout", "lock timeout"}},
 	// An operation the client gave a maxTimeMS and that ran past it. It is not a lock: the time may
 	// have gone anywhere, and the slow query line says where. "Client's executor exceeded time
 	// limit" is a different message altogether — the server noting a few microseconds of overrun
 	// in its own scheduling — and is not a client's operation at all.
-	{key: "max_time", title: "operations ran past their maxTimeMS", severity: "warning",
+	{key: "max_time", title: "operation time-limit text matched", severity: "medium",
 		next: "slow --failed",
 		any:  []string{"maxtimemsexpired", "operation exceeded time limit"},
 		not:  []string{"executor exceeded time limit"}},
-	{key: "cursor_timeout", title: "cursors were reaped before the client came back", severity: "note",
+	{key: "cursor_timeout", title: "cursor timeout or kill text matched", severity: "low",
 		next: "logs --category query", all: []string{"cursor"}, any: []string{"timed out", "timeout", "killing"}},
-	{key: "killed_op", title: "operations were interrupted or killed", severity: "note",
+	{key: "killed_op", title: "operation interruption or kill text matched", severity: "low",
 		next: "logs --category query",
 		any:  []string{"interrupted operation", "operation was interrupted", "killop", "operation killed"}},
-	{key: "network_error", title: "a connection to another host failed", severity: "warning",
+	{key: "network_error", title: "network, reachability or connection-pool text matched", severity: "medium",
 		next: "logs --category network",
 		any:  []string{"connection refused", "hostunreachable", "host unreachable", "socket exception", "connection reset by peer", "network error while", "networkinterfaceexceededtimelimit", "connection pool"}},
-	{key: "stale_config", title: "a router or shard held a stale routing table", severity: "warning",
+	{key: "stale_config", title: "routing metadata or refresh text matched", severity: "medium",
 		next: "logs --category sharding",
 		any:  []string{"staleconfig", "stale config", "stalechunkhistory", "stale shard version", "chunk metadata refresh"}},
-	{key: "jumbo_chunk", title: "a chunk was too large to move", severity: "warning",
+	{key: "jumbo_chunk", title: "jumbo or chunk-size text matched", severity: "medium",
 		next: "logs --category sharding", any: []string{"jumbo", "chunk too big"}},
-	{key: "balancer_off", title: "the balancer was stopped or could not run", severity: "note",
+	{key: "balancer_off", title: "balancer state or failure text matched", severity: "low",
 		next: "logs --category sharding",
 		all:  []string{"balancer"}, any: []string{"stopped", "disabled", "off", "failed"}},
-	{key: "slow_storage", title: "the storage engine reported an operation taking too long", severity: "warning",
+	{key: "slow_storage", title: "storage timing, eviction or cache-wait text matched", severity: "medium",
 		next: "metrics --metric 'wiredTiger/*'",
 		any:  []string{"took too long", "slow operation", "checkpoint took", "unable to evict", "cache eviction", "waiting for cache"},
 		not:  []string{"slow query"}},
-	{key: "clock", title: "the system clock moved or disagreed with a peer", severity: "warning",
+	{key: "clock", title: "system-time or clock text matched", severity: "medium",
 		next: "logs --category other", any: []string{"clock skew", "time jump", "system time", "clock drift"}},
-	{key: "connection_accepted", title: "connections were opened", severity: "note",
+	{key: "connection_accepted", title: "connection-accepted text matched", severity: "low",
 		next: "metrics --metric 'connections/*'", any: []string{"connection accepted"}},
-	{key: "connection_ended", title: "connections were closed", severity: "note",
+	{key: "connection_ended", title: "connection-ended text matched", severity: "low",
 		next: "metrics --metric 'connections/*'", any: []string{"connection ended"}},
 }
 
@@ -140,6 +146,7 @@ func NewHealth() *Health {
 
 // Add counts one record against the condition its message names, if any.
 func (h *Health) Add(record Record) {
+	basis := "message_text"
 	index, known := h.decided[record.Msg]
 	if !known {
 		index = matchRule(strings.ToLower(record.Msg))
@@ -152,6 +159,7 @@ func (h *Health) Add(record Record) {
 		switch record.Sev {
 		case "F", "E", "W":
 			index = matchRule(errorText(record))
+			basis = "error_attributes"
 		default:
 			return
 		}
@@ -162,24 +170,29 @@ func (h *Health) Add(record Record) {
 		if record.Sev != "F" {
 			return
 		}
-		h.count(Signal{Key: "fatal", Title: "the server logged a fatal line", Severity: "critical",
-			Next: "logs --category " + string(Classify(record))}, record)
+		h.count(Signal{Key: "fatal", Title: "the server logged a fatal line", Priority: "high",
+			Next: "logs --category " + string(Classify(record))}, record, "logged_severity_F")
 		return
 	}
 	matched := rules[index]
-	h.count(Signal{Key: matched.key, Title: matched.title, Severity: matched.severity, Next: matched.next}, record)
+	h.count(Signal{Key: matched.key, Title: matched.title, Priority: matched.severity, Next: matched.next,
+		MatchAny: matched.any, MatchAll: matched.all, MatchNot: matched.not}, record, basis)
 }
 
-func (h *Health) count(template Signal, record Record) {
+func (h *Health) count(template Signal, record Record, basis string) {
 	signal := h.signals[template.Key]
 	if signal == nil {
 		template.First, template.Last = record.At, record.At
 		template.Sources = map[string]int{}
+		template.LogSeverities = map[string]int{}
+		template.MatchBasis = map[string]int{}
 		template.Example = record.Msg
 		signal = &template
 		h.signals[template.Key] = signal
 	}
 	signal.Count++
+	signal.LogSeverities[record.Sev]++
+	signal.MatchBasis[basis]++
 	signal.Sources[record.Source]++
 	if record.At.Before(signal.First) {
 		signal.First = record.At
@@ -241,8 +254,8 @@ func containsOne(message string, needles []string) bool {
 	return false
 }
 
-// severityOrder ranks the three words a signal can carry.
-var severityOrder = map[string]int{"critical": 0, "warning": 1, "note": 2}
+// severityOrder ranks fixed review priorities, not MongoDB log severity or incident impact.
+var severityOrder = map[string]int{"high": 0, "medium": 1, "low": 2}
 
 // Signals returns what was seen, worst first.
 func (h *Health) Signals() []Signal {
@@ -251,7 +264,7 @@ func (h *Health) Signals() []Signal {
 		out = append(out, *signal)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		left, right := severityOrder[out[i].Severity], severityOrder[out[j].Severity]
+		left, right := severityOrder[out[i].Priority], severityOrder[out[j].Priority]
 		if left != right {
 			return left < right
 		}

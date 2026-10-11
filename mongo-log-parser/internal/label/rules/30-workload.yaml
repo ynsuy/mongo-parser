@@ -7,11 +7,11 @@ rules:
   - name: latency.reads
     title: "Read latency"
     doc: >-
-      Average milliseconds per read operation over each minute, from opLatencies: every
-      microsecond spent on reads in the minute over every read that finished in it. Tailable
-      getMores — a secondary or a change stream waiting for new oplog entries — count as reads and
-      can hold this up on a healthy primary, so read it beside the slow query log. Minutes with
-      fewer than sixty reads are left out.
+      Average milliseconds per read operation over each minute, from opLatencies: every microsecond
+      spent on reads in the minute over every read that finished in it. Minute summaries use a ratio
+      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
+      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ms"
@@ -31,8 +31,10 @@ rules:
   - name: latency.writes
     title: "Write latency"
     doc: >-
-      Average milliseconds per write operation over each minute, from opLatencies. Minutes with
-      fewer than sixty writes are left out.
+      Average milliseconds per write operation over each minute, from opLatencies. Minute summaries
+      use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are
+      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ms"
@@ -48,9 +50,10 @@ rules:
   - name: latency.commands
     title: "Command latency"
     doc: >-
-      Average milliseconds per command over each minute, from opLatencies: everything that is not a
-      CRUD read or write, aggregate included on most versions. Minutes with fewer than sixty
-      commands are left out.
+      Ratio of command opLatencies counter advance to command operation-count advance, scaled to
+      milliseconds per operation. Minute summaries use a ratio of sums for ratio signals and a mean
+      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
+      discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ms"
@@ -66,8 +69,10 @@ rules:
   - name: ops.total
     title: "Operations a second"
     doc: >-
-      Every operation the server ran a second: queries, getMores, inserts, updates, deletes and
-      commands. Shape only: a step is a new workload, a periodic burst a job or a batch.
+      Sum of query, getMore, insert, update, delete and command operation-counter rates. Minute
+      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
+      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
+      Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ops/s"
@@ -79,8 +84,10 @@ rules:
   - name: ops.writes
     title: "Writes a second"
     doc: >-
-      Inserts, updates and deletes a second. A burst of writes is what fills the dirty cache and
-      stretches checkpoints a few minutes later.
+      Sum of insert, update and delete operation-counter rates. Minute summaries use a ratio of sums
+      for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: rate
       unit: "ops/s"
@@ -91,10 +98,10 @@ rules:
   - name: query.targeting
     title: "Documents examined per document returned"
     doc: >-
-      Documents scanned for every document returned, across the server, over each minute. Near 1
-      queries are well indexed; in the hundreds or thousands something is scanning — a COLLSCAN or
-      an index that does not cover the filter. The slow query log names which shape. Minutes that
-      returned fewer than sixty documents are left out.
+      Ratio of documents-examined counter advance to documents-returned counter advance; it does not
+      determine index suitability. Minute summaries use a ratio of sums for ratio signals and a mean
+      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
+      discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "ratio"
@@ -102,10 +109,10 @@ rules:
       num: ["serverStatus/metrics/queryExecutor/scannedObjects"]
       den: ["serverStatus/metrics/document/returned"]
     levels:
-      - {name: efficient, down: [2, 10]}
-      - {name: loose, band: [2, 10, 50, 100]}
-      - {name: scanning, band: [50, 100, 500, 1000]}
-      - {name: very_poor, up: [500, 1000]}
+      - {name: low, down: [2, 10]}
+      - {name: moderate, band: [2, 10, 50, 100]}
+      - {name: high, band: [50, 100, 500, 1000]}
+      - {name: very_high, up: [500, 1000]}
     elevated: 100
     min_change: 10
     pairs_with: [query.collscans, cache.read_in, cpu.busy]
@@ -113,8 +120,9 @@ rules:
   - name: query.collscans
     title: "Collection scans"
     doc: >-
-      Queries a second that read a whole collection (4.4 and later). Any steady rate on a large
-      collection is a missing index; a burst is a report or a job.
+      Rate of the server's collection-scan counter. Minute summaries use a ratio of sums for ratio
+      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
+      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     since: "4.4"
     signal:
       mode: rate
@@ -129,10 +137,11 @@ rules:
     pairs_with: [query.targeting, cache.read_in]
 
   - name: query.in_memory_sorts
-    title: "In-memory sorts"
+    title: "scanAndOrder counter rate"
     doc: >-
-      Operations a second that sorted in memory because no index gave the order (scanAndOrder).
-      They cost CPU and memory and fail past the sort limit.
+      Rate of the server's scanAndOrder counter. Minute summaries use a ratio of sums for ratio
+      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
+      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "/s"
@@ -143,8 +152,10 @@ rules:
   - name: writes.conflicts
     title: "Write conflicts"
     doc: >-
-      Write conflicts a second: two operations updating the same document at once, one retrying. A
-      burst means hot documents — a counter, a queue collection, a status field everyone updates.
+      Rate of the server's writeConflicts counter; retries, document identity and contention cause are
+      not inferred from this counter. Minute summaries use a ratio of sums for ratio signals and a
+      mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "/s"
@@ -160,8 +171,10 @@ rules:
   - name: ttl.deletes
     title: "Documents deleted by TTL"
     doc: >-
-      Documents the TTL monitor deleted a second. TTL runs every minute; a large expiry deletes in
-      bursts that load the disk and the oplog, and nightly expiry is a classic periodic cause.
+      Rate of documents reported deleted by the TTL monitor; collection identity, expiry backlog and
+      latency impact are not inferred. Minute summaries use a ratio of sums for ratio signals and a
+      mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
+      or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: rate
       unit: "docs/s"
@@ -172,8 +185,9 @@ rules:
   - name: cursors.open
     title: "Open cursors"
     doc: >-
-      Cursors open on the server. A climb that never comes down is clients not closing or not
-      exhausting cursors, and each one holds resources until it times out.
+      Count reported for currently open cursors. Minute summaries use a ratio of sums for ratio
+      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
+      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "cursors"

@@ -30,16 +30,17 @@ const (
 
 // Group is a set of log lines that say the same thing, counted over the window.
 type Group struct {
-	ID          string         `json:"group_id"`
-	Category    Category       `json:"category"`
-	Severity    string         `json:"severity"`
-	Component   string         `json:"component"`
-	MessageID   int            `json:"message_id"`
-	Message     string         `json:"message"`
-	Count       int            `json:"count"`
-	First, Last time.Time      `json:"-"`
-	Sources     map[string]int `json:"sources"`
-	Example     string         `json:"example_context,omitempty"`
+	ID        string         `json:"group_id"`
+	Category  Category       `json:"category"`
+	Severity  string         `json:"severity"`
+	Component string         `json:"component"`
+	MessageID int            `json:"message_id"`
+	Message   string         `json:"message"`
+	Count     int            `json:"count"`
+	First     time.Time      `json:"first_at,omitzero"`
+	Last      time.Time      `json:"last_at,omitzero"`
+	Sources   map[string]int `json:"sources"`
+	Example   string         `json:"example_context,omitempty"`
 }
 
 // Priority ranks a group for review: severity first, then failure signals, then what kind of

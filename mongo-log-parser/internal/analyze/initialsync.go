@@ -53,11 +53,11 @@ func (a SyncAttempt) Failed() bool {
 // Rebuild is the latest statistics line one node wrote about the initial sync it was doing.
 type Rebuild struct {
 	Source string    `json:"source"`
-	At     time.Time `json:"-"`
+	At     time.Time `json:"at,omitzero"`
 	Status string    `json:"status,omitempty"`
 	Method string    `json:"method,omitempty"`
 
-	Started       time.Time `json:"-"`
+	Started       time.Time `json:"started_at,omitzero"`
 	ElapsedMillis float64   `json:"elapsed_ms"`
 	RemainingMs   float64   `json:"estimated_remaining_ms"`
 

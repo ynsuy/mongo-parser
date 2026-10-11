@@ -7,11 +7,11 @@ rules:
   - name: memory.used
     title: "Memory in use"
     doc: >-
-      Share of the machine's memory not available to new allocations (MemTotal less MemAvailable,
-      so the page cache the kernel can drop counts as free). Near the top the kernel reclaims hard,
-      then the OOM killer chooses a process, and mongod is usually the largest. MongoDB collects
-      MemAvailable from 4.2.14 and 4.4.5 (ftdc_system_stats_linux.cpp kMemKeys); earlier nodes do
-      not get this label.
+      Share of the machine's memory not available to new allocations (MemTotal less MemAvailable, so
+      the page cache the kernel can drop counts as free). Host-wide memory or CPU counters do not
+      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
+      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     versions: ["4.2.14-4.3", "4.4.5-"]
     signal:
       mode: gauge
@@ -24,7 +24,7 @@ rules:
       - {name: low, down: [40, 60]}
       - {name: moderate, band: [40, 60, 75, 85]}
       - {name: high, band: [75, 85, 92, 96]}
-      - {name: exhausted, up: [92, 96]}
+      - {name: very_high, up: [92, 96]}
     elevated: 90
     min_change: 10
     pairs_with: [memory.swap_used, memory.page_faults, memory.mongod_resident]
@@ -32,9 +32,10 @@ rules:
   - name: memory.swap_used
     title: "Swap in use"
     doc: >-
-      Share of swap holding pages. A database whose pages are swapped out pays a disk read for
-      memory it believes it has; any sustained swap on a mongod host is worth explaining, and
-      swappiness or a cache sized past the container is the usual reason.
+      Share of swap holding pages. Host-wide memory or CPU counters do not establish a container's
+      resource limit. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -53,8 +54,10 @@ rules:
   - name: memory.page_faults
     title: "Page faults"
     doc: >-
-      Major page faults mongod took a second: memory it had to read back from disk. A burst is
-      memory pressure — swap, or a page cache too small for what is read from it.
+      Rate of the process's logged major-page-fault counter. Minute summaries use a ratio of sums for
+      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
+      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
+      not causal claims.
     signal:
       mode: rate
       unit: "/s"
@@ -70,9 +73,10 @@ rules:
   - name: memory.mongod_resident
     title: "mongod resident memory"
     doc: >-
-      mongod's resident memory as a share of the machine's. In a container, compare it with the
-      cgroup limit the log reports at startup, not with the host: a cache sized from host memory
-      in a smaller container is a common cause of OOM kills.
+      mongod's resident memory as a share of the machine's. Host-wide memory or CPU counters do not
+      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
+      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -88,12 +92,13 @@ rules:
     pairs_with: [memory.used, memory.heap_outside_cache, memory.cache_of_ram]
 
   - name: memory.heap_outside_cache
-    title: "Heap outside the WiredTiger cache"
+    title: "Allocated bytes minus WiredTiger cache bytes"
     doc: >-
-      Bytes tcmalloc has allocated beyond what the WiredTiger cache holds: connections, sorts,
-      aggregations, plan caches and fragmentation. Rising while the cache stays flat is the shape a
-      reported memory leak usually has — and it is usually workload or allocator retention, not a
-      leak.
+      Difference between tcmalloc allocated bytes and bytes currently held in the WiredTiger cache;
+      this is a derived estimate, not a complete inventory of non-cache allocations. Minute summaries
+      use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are
+      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
+      navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "GiB"
@@ -104,13 +109,12 @@ rules:
     pairs_with: [connections.current, memory.allocator_free, cursors.open]
 
   - name: memory.allocator_free
-    title: "Memory freed but kept by tcmalloc"
+    title: "tcmalloc pageheap-free share"
     doc: >-
-      Share of tcmalloc's heap that is free but not returned to the operating system
-      (pageheap_free_bytes over heap_size). A large share is memory the machine counts against
-      mongod that no operation is using; tcmallocReleaseRate decides how fast it goes back. Before
-      8.0 only: 8.0 Linux builds use Google tcmalloc, which keeps most free memory in per-CPU
-      caches that pageheap_free_bytes does not count.
+      Ratio of tcmalloc pageheap_free_bytes to heap_size; these counters do not describe every
+      allocator cache. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
+      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
+      server limit. Paired labels are navigation links, not causal claims.
     until: "8.0"
     signal:
       mode: gauge
@@ -129,9 +133,10 @@ rules:
   - name: memory.cache_of_ram
     title: "WiredTiger cache size against RAM"
     doc: >-
-      The configured cache as a share of the machine's memory. The default is half of RAM less a
-      gigabyte; much more than that leaves too little for connections, sorts and the page cache. In
-      a container the machine's memory may not be the limit the process lives under.
+      The configured cache as a share of the machine's memory. Host-wide memory or CPU counters do not
+      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
+      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
+      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
     signal:
       mode: gauge
       unit: "%"
@@ -139,9 +144,9 @@ rules:
       num: ["serverStatus/wiredTiger/cache/maximum bytes configured"]
       den: ["systemMetrics/memory/MemTotal_kb"]
     levels:
-      - {name: conservative, down: [30, 40]}
-      - {name: default, band: [30, 40, 55, 62]}
-      - {name: oversized, up: [58, 70]}
+      - {name: low, down: [30, 40]}
+      - {name: middle, band: [30, 40, 55, 62]}
+      - {name: high, up: [58, 70]}
     elevated: 60
     min_change: 5
     pairs_with: [memory.used, memory.mongod_resident]
