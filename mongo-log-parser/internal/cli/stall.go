@@ -165,12 +165,15 @@ func renderImbalances(found []label.Imbalance, options render.TableOptions) stri
 			if im.Source != "" {
 				return fmt.Sprintf("%d devices on %s", im.Count, im.Source)
 			}
+			if im.Peers != "" {
+				return fmt.Sprintf("%d nodes, each %s", im.Count, im.Peers)
+			}
 			return fmt.Sprintf("%d nodes", im.Count)
 		})},
 		{Title: "Hottest", Values: text(func(im label.Imbalance) string { return im.Hottest })},
 		{Title: "p95", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Value) })},
 		{Title: "Others", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Others) })},
-		{Title: "Verdict", Values: text(func(im label.Imbalance) string { return fmt.Sprintf("%s (%.1fx)", im.Verdict, im.Ratio) })},
+		{Title: "Ratio", Values: text(func(im label.Imbalance) string { return fmt.Sprintf("%.1fx (%s)", im.Ratio, im.Comparison) })},
 	}, options)
 }
 

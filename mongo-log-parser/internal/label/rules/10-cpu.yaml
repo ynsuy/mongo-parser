@@ -9,9 +9,7 @@ rules:
     doc: >-
       Share of host CPU counters recorded as user, nice, system, IRQ, soft IRQ or steal, excluding
       idle and iowait; steal is not process execution time. Host-wide memory or CPU counters do not
-      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
-      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      establish a container's resource limit.
     signal:
       mode: rate
       unit: "%"
@@ -40,15 +38,13 @@ rules:
       - {name: very_high, up: [88, 95]}
     elevated: 80
     min_change: 10
-    pairs_with: [cpu.saturated, cpu.run_queue, cpu.iowait, cpu.kernel_share]
+    pairs_with: [cpu.busy_above_95, cpu.run_queue, cpu.iowait, cpu.kernel_share]
 
-  - name: cpu.saturated
+  - name: cpu.busy_above_95
     title: "CPU-busy samples above 95%"
     doc: >-
-      Share of valid samples with the signal strictly above 95 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which host CPU busy, computed as for cpu.busy, was strictly above 95
+      %, normalized to a 60-second minute.
     signal:
       mode: rate
       unit: "%"
@@ -69,10 +65,7 @@ rules:
   - name: cpu.iowait
     title: "Host CPU iowait share"
     doc: >-
-      Share of the machine's CPU idle with I/O outstanding. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Share of the machine's CPU idle with I/O outstanding.
     signal:
       mode: rate
       unit: "%"
@@ -91,10 +84,7 @@ rules:
   - name: cpu.steal
     title: "Host CPU steal-time share"
     doc: >-
-      Share of the host CPU counters recorded as steal time. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Share of the host CPU counters recorded as steal time.
     signal:
       mode: rate
       unit: "%"
@@ -112,9 +102,7 @@ rules:
   - name: cpu.kernel_share
     title: "CPU time in the kernel"
     doc: >-
-      System CPU as a share of user plus system. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      System CPU as a share of user plus system.
     signal:
       mode: rate
       unit: "%"
@@ -134,10 +122,7 @@ rules:
   - name: cpu.run_queue
     title: "Runnable threads per core"
     doc: >-
-      Threads ready to run, per logical core, averaged over the minute. Minute summaries use a ratio
-      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Threads ready to run, per logical core, averaged over the minute.
     versions: ["7.0.10-7.0.11", "7.0.16-7.1", "7.3-"]
     signal:
       mode: gauge
@@ -150,15 +135,12 @@ rules:
       - {name: very_high, up: [1.2, 2]}
     elevated: 1.5
     min_change: 0.3
-    pairs_with: [cpu.busy, cpu.saturated]
+    pairs_with: [cpu.busy, cpu.busy_above_95]
 
   - name: cpu.run_queue
     title: "Runnable threads per core"
     doc: >-
-      Threads ready to run, per logical core, averaged over the minute. Minute summaries use a ratio
-      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Threads ready to run, per logical core, averaged over the minute.
     versions: ["-7.0.10", "7.0.11-7.0.16", "7.1-7.3"]
     signal:
       mode: gauge
@@ -168,15 +150,12 @@ rules:
     levels: *run_queue_levels
     elevated: 1.5
     min_change: 0.3
-    pairs_with: [cpu.busy, cpu.saturated]
+    pairs_with: [cpu.busy, cpu.busy_above_95]
 
   - name: cpu.blocked
     title: "Processes in uninterruptible sleep"
     doc: >-
-      Host process count recorded in procs_blocked (uninterruptible sleep). Minute summaries use a
-      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Host process count recorded in procs_blocked (uninterruptible sleep).
     signal:
       mode: gauge
       unit: "threads"
@@ -192,9 +171,7 @@ rules:
   - name: cpu.context_switches
     title: "Context switches"
     doc: >-
-      Context switches a second, host-wide. Minute summaries use a ratio of sums for ratio signals and
-      a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Context switches a second, host-wide.
     signal:
       mode: rate
       unit: "/s"

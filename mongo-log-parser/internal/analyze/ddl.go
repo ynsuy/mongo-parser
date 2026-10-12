@@ -18,8 +18,8 @@ type IndexBuild struct {
 	Namespace string    `json:"ns"`
 	Indexes   string    `json:"indexes,omitempty"`
 	Source    string    `json:"source"`
-	Started   time.Time `json:"started"`
-	Finished  time.Time `json:"finished,omitempty"`
+	Started   time.Time `json:"started_at,omitzero"`
+	Finished  time.Time `json:"finished_at,omitzero"`
 	Outcome   string    `json:"outcome"`
 	Phases    int       `json:"phases"`
 }

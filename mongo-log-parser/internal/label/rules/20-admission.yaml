@@ -15,9 +15,10 @@ rules:
     title: "Read tickets in use"
     doc: >-
       Read tickets in use as a share of the pool as it was that second (out over totalTickets),
-      averaged over the minute. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      averaged over the minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -37,10 +38,11 @@ rules:
   - name: tickets.read.scarce
     title: "Samples with under 10% of read tickets left"
     doc: >-
-      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which available read tickets were strictly below 10 % of the pool,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -63,11 +65,11 @@ rules:
   - name: tickets.read.empty
     title: "Samples with no read ticket left"
     doc: >-
-      Share of valid samples with the signal strictly below 0.5 tickets left, normalized to a
-      60-second minute. This is a normalized sample share, not measured continuous elapsed duration;
-      cadence and gaps must be checked. Numeric bands and thresholds are fixed descriptive references,
-      not a diagnosis or a discovered server limit. Paired labels are navigation links, not causal
-      claims.
+      Share of valid samples in which fewer than 0.5 read tickets were available, that is none,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -88,10 +90,7 @@ rules:
   - name: tickets.read.pool
     title: "Read ticket pool size"
     doc: >-
-      How many read tickets the pool held, averaged over the minute. Minute summaries use a ratio of
-      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      How many read tickets the pool held, averaged over the minute.
     until: "8.0"
     signal:
       mode: gauge
@@ -104,10 +103,7 @@ rules:
     title: "Time waiting for a read ticket"
     doc: >-
       Milliseconds a second operations spent queued for a read ticket, added across every operation
-      waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it. Minute
-      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it.
     since: "7.0"
     until: "8.0"
     signal:
@@ -127,9 +123,10 @@ rules:
     title: "Read tickets in use"
     doc: >-
       Read tickets in use as a share of the pool as it was that second (out over totalTickets),
-      averaged over the minute. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      averaged over the minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -149,10 +146,11 @@ rules:
   - name: tickets.read.scarce
     title: "Samples with under 10% of read tickets left"
     doc: >-
-      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which available read tickets were strictly below 10 % of the pool,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -175,11 +173,11 @@ rules:
   - name: tickets.read.empty
     title: "Samples with no read ticket left"
     doc: >-
-      Share of valid samples with the signal strictly below 0.5 tickets left, normalized to a
-      60-second minute. This is a normalized sample share, not measured continuous elapsed duration;
-      cadence and gaps must be checked. Numeric bands and thresholds are fixed descriptive references,
-      not a diagnosis or a discovered server limit. Paired labels are navigation links, not causal
-      claims.
+      Share of valid samples in which fewer than 0.5 read tickets were available, that is none,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the read ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.read.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -200,10 +198,7 @@ rules:
   - name: tickets.read.pool
     title: "Read ticket pool size"
     doc: >-
-      How many read tickets the pool held, averaged over the minute. Minute summaries use a ratio of
-      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      How many read tickets the pool held, averaged over the minute.
     since: "8.0"
     signal:
       mode: gauge
@@ -217,10 +212,7 @@ rules:
     doc: >-
       Milliseconds a second operations spent queued for a read ticket, added across every operation
       waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it. The
-      counter covers normal-priority operations, not exempt operations. Minute summaries use a ratio
-      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      counter covers normal-priority operations, not exempt operations.
     since: "8.0"
     signal:
       mode: rate
@@ -239,9 +231,10 @@ rules:
     title: "Write tickets in use"
     doc: >-
       Write tickets in use as a share of the pool as it was that second (out over totalTickets),
-      averaged over the minute. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      averaged over the minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -261,10 +254,11 @@ rules:
   - name: tickets.write.scarce
     title: "Samples with under 10% of write tickets left"
     doc: >-
-      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which available write tickets were strictly below 10 % of the pool,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -287,11 +281,11 @@ rules:
   - name: tickets.write.empty
     title: "Samples with no write ticket left"
     doc: >-
-      Share of valid samples with the signal strictly below 0.5 tickets left, normalized to a
-      60-second minute. This is a normalized sample share, not measured continuous elapsed duration;
-      cadence and gaps must be checked. Numeric bands and thresholds are fixed descriptive references,
-      not a diagnosis or a discovered server limit. Paired labels are navigation links, not causal
-      claims.
+      Share of valid samples in which fewer than 0.5 write tickets were available, that is none,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     until: "8.0"
     signal:
       mode: gauge
@@ -312,10 +306,7 @@ rules:
   - name: tickets.write.pool
     title: "Write ticket pool size"
     doc: >-
-      How many write tickets the pool held, averaged over the minute. Minute summaries use a ratio of
-      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      How many write tickets the pool held, averaged over the minute.
     until: "8.0"
     signal:
       mode: gauge
@@ -328,10 +319,7 @@ rules:
     title: "Time waiting for a write ticket"
     doc: >-
       Milliseconds a second operations spent queued for a write ticket, added across every operation
-      waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it. Minute
-      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it.
     since: "7.0"
     until: "8.0"
     signal:
@@ -351,9 +339,10 @@ rules:
     title: "Write tickets in use"
     doc: >-
       Write tickets in use as a share of the pool as it was that second (out over totalTickets),
-      averaged over the minute. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      averaged over the minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -373,10 +362,11 @@ rules:
   - name: tickets.write.scarce
     title: "Samples with under 10% of write tickets left"
     doc: >-
-      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which available write tickets were strictly below 10 % of the pool,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -399,11 +389,11 @@ rules:
   - name: tickets.write.empty
     title: "Samples with no write ticket left"
     doc: >-
-      Share of valid samples with the signal strictly below 0.5 tickets left, normalized to a
-      60-second minute. This is a normalized sample share, not measured continuous elapsed duration;
-      cadence and gaps must be checked. Numeric bands and thresholds are fixed descriptive references,
-      not a diagnosis or a discovered server limit. Paired labels are navigation links, not causal
-      claims.
+      Share of valid samples in which fewer than 0.5 write tickets were available, that is none,
+      normalized to a 60-second minute.
+    applies: >-
+      From 7.0 the server may resize the write ticket pool itself; a share of a small pool and of a
+      large one are not alike, so read it beside tickets.write.pool.
     since: "8.0"
     signal:
       mode: gauge
@@ -424,10 +414,7 @@ rules:
   - name: tickets.write.pool
     title: "Write ticket pool size"
     doc: >-
-      How many write tickets the pool held, averaged over the minute. Minute summaries use a ratio of
-      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      How many write tickets the pool held, averaged over the minute.
     since: "8.0"
     signal:
       mode: gauge
@@ -441,10 +428,7 @@ rules:
     doc: >-
       Milliseconds a second operations spent queued for a write ticket, added across every operation
       waiting: 1000 is one operation waiting the whole second, or ten waiting a tenth of it. The
-      counter covers normal-priority operations, not exempt operations. Minute summaries use a ratio
-      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      counter covers normal-priority operations, not exempt operations.
     since: "8.0"
     signal:
       mode: rate
@@ -462,10 +446,8 @@ rules:
   - name: queue.readers
     title: "Samples with reads queued"
     doc: >-
-      Share of valid samples with the signal strictly above 0 operations, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which globalLock.currentQueue.readers was above 0, normalized to a
+      60-second minute.
     signal:
       mode: gauge
       unit: "operations"
@@ -484,10 +466,8 @@ rules:
   - name: queue.writers
     title: "Samples with writes queued"
     doc: >-
-      Share of valid samples with the signal strictly above 0 operations, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which globalLock.currentQueue.writers was above 0, normalized to a
+      60-second minute.
     signal:
       mode: gauge
       unit: "operations"

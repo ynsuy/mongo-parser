@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -21,6 +22,7 @@ import (
 // which node was settled when the bundle was read, so a stream arrives here already named.
 type streamSet struct {
 	sources []string // what each stream is called in the output
+	roles   []string // each stream's node role, from the store; empty when the bundle never said
 	streams []*ftdc.Stream
 	first   time.Time // earliest sample across the set
 	last    time.Time // latest, which is what a relative window counts back from
@@ -36,20 +38,23 @@ type streamSet struct {
 // openStreams opens the FTDC streams the caller asked for: the ones it named, or every one in the
 // bundle when it named none or said "all".
 func openStreams(st *store.Store, wanted []string) (*streamSet, error) {
-	dirs, labels, err := ftdcStreams(st, wanted)
+	found, err := ftdcStreams(st, wanted)
 	if err != nil {
 		return nil, err
 	}
-	set := &streamSet{sources: make([]string, 0, len(dirs)), streams: make([]*ftdc.Stream, 0, len(dirs))}
-	for i, dir := range dirs {
-		stream, err := ftdc.OpenStream(dir)
+	set := &streamSet{sources: make([]string, 0, len(found)), roles: make([]string, 0, len(found)), streams: make([]*ftdc.Stream, 0, len(found))}
+	for _, f := range found {
+		// Only the files ingest kept: the same directory can hold a copy it read once, or
+		// whatever else sat beside the metrics files, and reading those would count samples twice.
+		stream, err := ftdc.OpenFiles(f.dir, f.paths)
 		if err != nil {
 			// A stream the bundle holds and this build cannot read is a gap in the answer, not a
 			// reason to refuse the question: coverage says what could not be read.
 			continue
 		}
 		set.streams = append(set.streams, stream)
-		set.sources = append(set.sources, labels[i])
+		set.sources = append(set.sources, f.label)
+		set.roles = append(set.roles, f.role)
 		set.chunks += stream.Chunks()
 		first, last := stream.Span()
 		if set.first.IsZero() || first.Before(set.first) {
@@ -62,46 +67,63 @@ func openStreams(st *store.Store, wanted []string) (*streamSet, error) {
 	return set, nil
 }
 
-// ftdcStreams is where each wanted stream's files are, and what to call it. The store settled both
-// when it read the bundle: a stream is named after the node it was written by.
-func ftdcStreams(st *store.Store, wanted []string) (dirs, labels []string, err error) {
+// ftdcStream is one stream as the store settled it when it read the bundle.
+type ftdcStream struct {
+	dir   string
+	label string   // a stream is named after the node it was written by
+	role  string   // the node's process and cluster role, as far as the bundle said: "mongod (shard)"
+	paths []string // the files ingest kept
+}
+
+// ftdcStreams is where each wanted stream's files are, and what to call it.
+func ftdcStreams(st *store.Store, wanted []string) ([]ftdcStream, error) {
 	rows, err := st.DB.Query(`
-		SELECT ftdc.dir, coalesce(nullif(node.label, ''), nullif(node.name, ''), nullif(ftdc.host, ''), ftdc.origin)
+		SELECT ftdc.dir, coalesce(nullif(node.label, ''), nullif(node.name, ''), nullif(ftdc.host, ''), ftdc.origin),
+		       coalesce(node.role, ''), ftdc.paths
 		FROM ftdc LEFT JOIN node ON node.id = ftdc.node
 		WHERE ftdc.chunks > 0 ORDER BY ftdc.first_ts, ftdc.id`)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rows.Close()
+	var all []ftdcStream
 	for rows.Next() {
-		var dir, label string
-		if err := rows.Scan(&dir, &label); err != nil {
-			return nil, nil, err
+		var f ftdcStream
+		var list string
+		if err := rows.Scan(&f.dir, &f.label, &f.role, &list); err != nil {
+			return nil, err
 		}
-		dirs, labels = append(dirs, dir), append(labels, label)
+		if err := json.Unmarshal([]byte(list), &f.paths); err != nil {
+			return nil, fmt.Errorf("FTDC stream %s: file list: %w", f.label, err)
+		}
+		all = append(all, f)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	// Naming nothing means the whole bundle. Refusing to read three nodes because the caller did
 	// not say "all" made pointing at a path an error, when a path is the whole question.
 	if len(wanted) == 0 || (len(wanted) == 1 && strings.EqualFold(wanted[0], "all")) {
-		return dirs, labels, nil
+		return all, nil
 	}
-	keptDirs, keptLabels := make([]string, 0, len(wanted)), make([]string, 0, len(wanted))
+	kept := make([]ftdcStream, 0, len(wanted))
 	for _, want := range wanted {
 		found := false
-		for i, label := range labels {
-			if strings.EqualFold(label, want) || dirs[i] == want || strings.Contains(strings.ToLower(label), strings.ToLower(want)) {
-				keptDirs, keptLabels = append(keptDirs, dirs[i]), append(keptLabels, label)
+		for _, f := range all {
+			if strings.EqualFold(f.label, want) || f.dir == want || strings.Contains(strings.ToLower(f.label), strings.ToLower(want)) {
+				kept = append(kept, f)
 				found = true
 			}
 		}
 		if !found {
-			return nil, nil, fmt.Errorf("no FTDC stream here is called %s; this bundle has: %s", want, strings.Join(labels, ", "))
+			names := make([]string, len(all))
+			for i, f := range all {
+				names[i] = f.label
+			}
+			return nil, fmt.Errorf("no FTDC stream here is called %s; this bundle has: %s", want, strings.Join(names, ", "))
 		}
 	}
-	return keptDirs, keptLabels, nil
+	return kept, nil
 }
 
 // label is how one metric is shown, and metricPath turns a shown name back into the path it stands

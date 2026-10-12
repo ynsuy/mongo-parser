@@ -26,8 +26,8 @@ beside the logs.
 
 Descriptions report measurements, derived values and their support, never preset causes or fixes.
 Numeric bands, thresholds and review priorities are fixed navigation references, not incident
-severity or discovered server limits. Legacy IDs such as `cpu.saturated` and `cache.over_trigger`
-remain stable identifiers; their titles and descriptions specify the actual numerical observation.
+severity or discovered server limits. Label IDs name the measurement and the fixed number it is
+read against (`cpu.busy_above_95`, `cache.fill_above_95`), not a condition of the server.
 Time views report normalized valid-sample shares, not continuous elapsed durations. Log signals
 report text-pattern matches with match conditions, message/attribute provenance and actual logged
 severity counts. `review_priority` replaces the former parser-assigned signal `severity` field;

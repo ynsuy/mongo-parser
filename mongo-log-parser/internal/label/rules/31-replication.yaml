@@ -10,11 +10,15 @@ rules:
   - name: repl.member_lag
     title: "Member replication lag"
     doc: >-
-      Difference between each member's reported applied-write timestamp and the newest such timestamp
-      in this node's replica-set status, scaled to seconds. Members without a timestamp have no
-      result. optimeDate has one-second resolution. Minute summaries select the highest valid sample.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      Difference between each member's reported applied-write timestamp and the newest such
+      timestamp in this node's replica-set status, scaled to seconds. Members without a timestamp
+      have no result. optimeDate has one-second resolution. Minute summaries select the highest
+      valid sample.
+    applies: >-
+      One result per entry of this node's replica-set status, numbered by position in that list; a
+      position can name a different member after a reconfig. Lag is measured against the newest
+      applied time among members, not against the primary, and a member that stopped reporting keeps
+      its last time.
     until: "6.0"
     signal:
       mode: gauge
@@ -30,16 +34,19 @@ rules:
       - {name: far_behind, up: [120, 300]}
     elevated: 30
     min_change: 5
-    pairs_with: [repl.majority_lag, flow.throttled, net.retransmit]
+    pairs_with: [repl.majority_lag, flow.lagged, net.retransmit]
 
   - name: repl.member_lag
     title: "Member replication lag"
     doc: >-
-      Difference between each member's reported applied-write timestamp and the newest such timestamp
-      in this node's replica-set status, scaled to seconds. Members without a timestamp have no
-      result. Minute summaries select the highest valid sample. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Difference between each member's reported applied-write timestamp and the newest such
+      timestamp in this node's replica-set status, scaled to seconds. Members without a timestamp
+      have no result. Minute summaries select the highest valid sample.
+    applies: >-
+      One result per entry of this node's replica-set status, numbered by position in that list; a
+      position can name a different member after a reconfig. Lag is measured against the newest
+      applied time among members, not against the primary, and a member that stopped reporting keeps
+      its last time.
     since: "6.0"
     signal:
       mode: gauge
@@ -51,15 +58,13 @@ rules:
     levels: *lag_levels
     elevated: 30
     min_change: 5
-    pairs_with: [repl.majority_lag, flow.throttled, net.retransmit]
+    pairs_with: [repl.majority_lag, flow.lagged, net.retransmit]
 
   - name: repl.majority_lag
     title: "Majority commit lag"
     doc: >-
-      Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to seconds.
-      Minute summaries select the highest valid sample. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to
+      seconds. Minute summaries select the highest valid sample.
     since: "4.2"
     signal:
       mode: gauge
@@ -74,15 +79,17 @@ rules:
       - {name: lagging, up: [10, 20]}
     elevated: 10
     min_change: 2
-    pairs_with: [repl.member_lag, flow.throttled, latency.writes]
+    pairs_with: [repl.member_lag, flow.lagged, latency.writes]
 
-  - name: flow.throttled
+  - name: flow.lagged
     title: "Samples with flowControl.isLagged set"
     doc: >-
-      Share of valid samples with the signal strictly above 0 lagged, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which flowControl.isLagged was set, normalized to a 60-second
+      minute.
+    applies: >-
+      Set only on a primary with flow control enabled; a secondary, or a primary with flow control
+      disabled, reports it unset. The flag records that the majority commit point lagged; time
+      writers spent waiting for flow control is flow.wait.
     signal:
       mode: gauge
       unit: "lagged"
@@ -90,9 +97,9 @@ rules:
     view: time_above
     threshold: 0
     levels:
-      - {name: off, down: [0, 1]}
-      - {name: intermittent, band: [0, 1, 30, 48]}
-      - {name: engaged, up: [30, 48]}
+      - {name: none, down: [0, 1]}
+      - {name: some, band: [0, 1, 30, 48]}
+      - {name: most, up: [30, 48]}
     elevated: 1
     min_change: 3
     pairs_with: [flow.wait, repl.majority_lag, latency.writes]
@@ -101,9 +108,7 @@ rules:
     title: "Time writers waited on flow control"
     doc: >-
       Milliseconds a second writes spent waiting for flow control tickets on this node, added across
-      every write waiting. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      every write waiting.
     signal:
       mode: rate
       unit: "ms/s"
@@ -115,15 +120,12 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [flow.throttled, latency.writes]
+    pairs_with: [flow.lagged, latency.writes]
 
   - name: repl.apply_rate
     title: "Oplog entries applied"
     doc: >-
-      Rate of the node's oplog application operation counter. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Rate of the node's oplog application operation counter.
     direction: down
     signal:
       mode: rate
@@ -137,10 +139,7 @@ rules:
   - name: repl.buffer_fill
     title: "Apply buffer fill"
     doc: >-
-      Reported replication buffer bytes as a share of its reported maximum. Minute summaries use a
-      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Reported replication buffer bytes as a share of its reported maximum.
     until: "8.0"
     signal:
       mode: gauge
@@ -159,10 +158,7 @@ rules:
   - name: repl.buffer_fill
     title: "Apply buffer fill"
     doc: >-
-      Reported replication buffer bytes as a share of its reported maximum. Minute summaries use a
-      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Reported replication buffer bytes as a share of its reported maximum.
     since: "8.0"
     signal:
       mode: gauge
@@ -178,10 +174,8 @@ rules:
   - name: repl.buffer_full
     title: "Apply-buffer samples above 90%"
     doc: >-
-      Share of valid samples with the signal strictly above 90 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which replication buffer bytes were strictly above 90 % of the
+      reported maximum, normalized to a 60-second minute.
     until: "8.0"
     signal:
       mode: gauge
@@ -203,10 +197,8 @@ rules:
   - name: repl.buffer_full
     title: "Apply-buffer samples above 90%"
     doc: >-
-      Share of valid samples with the signal strictly above 90 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which replication buffer bytes were strictly above 90 % of the
+      reported maximum, normalized to a 60-second minute.
     since: "8.0"
     signal:
       mode: gauge

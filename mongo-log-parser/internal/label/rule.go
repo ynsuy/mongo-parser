@@ -32,8 +32,15 @@ type Rule struct {
 	Name  string `json:"name" yaml:"name"`
 	Title string `json:"title" yaml:"title"`
 	// Doc says what the number means and how to read its levels. It is what a model reads.
-	Doc    string `json:"doc" yaml:"doc"`
-	Signal Signal `json:"signal" yaml:"signal"`
+	Doc string `json:"doc" yaml:"doc"`
+	// Reference names where a fixed number the rule reads against comes from, when it is a default
+	// the server itself uses. The server's configured value is never read, so a node set otherwise
+	// has its own line somewhere else.
+	Reference *Reference `json:"reference,omitempty" yaml:"reference,omitempty"`
+	// Applies says when the signal means what the title says: the role, setting or version it
+	// depends on, or how its instances are numbered.
+	Applies string `json:"applies,omitempty" yaml:"applies,omitempty"`
+	Signal  Signal `json:"signal" yaml:"signal"`
 	// View is the summary of each minute the bands and the shape are read on: mean, max, min,
 	// time_above or time_below. Empty is mean.
 	View string `json:"view" yaml:"view"`
@@ -72,6 +79,16 @@ type Rule struct {
 	// Versions is several ranges instead of one, "since-until" with either side open, for a field
 	// that came and went within patch releases: "7.0.10-7.0.11", "7.0.16-7.1", "7.3-".
 	Versions []string `json:"versions,omitempty" yaml:"versions,omitempty"`
+}
+
+// Reference is a server default one of a rule's fixed numbers is taken from.
+type Reference struct {
+	Value  float64 `json:"value" yaml:"value"`
+	Unit   string  `json:"unit" yaml:"unit"`
+	Source string  `json:"source" yaml:"source"`
+	// Configured is always "not read": the rule compares against the default, whatever the node was
+	// configured with.
+	Configured string `json:"configured" yaml:"-"`
 }
 
 // Signal is how a rule's value is made from FTDC paths, once for every sample.
@@ -190,6 +207,9 @@ func load() ([]Rule, error) {
 				}
 			}
 			r.Pack = pack.Pack
+			if r.Reference != nil {
+				r.Reference.Configured = "not read"
+			}
 			out = append(out, r)
 		}
 	}
@@ -210,6 +230,8 @@ func (r Rule) validate() error {
 		return fmt.Errorf("the signal needs a unit")
 	case len(s.Num) == 0:
 		return fmt.Errorf("no numerator")
+	case r.Reference != nil && (r.Reference.Source == "" || r.Reference.Unit == ""):
+		return fmt.Errorf("a reference names its unit and the default it comes from")
 	case len(r.Levels) == 1:
 		return fmt.Errorf("one level is not a scale: give two or more, or none for a shape-only label")
 	case len(r.Versions) > 0 && (r.Since != "" || r.Until != ""):

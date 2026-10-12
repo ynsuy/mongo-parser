@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -295,5 +296,43 @@ func TestInefficiencyIsAReadersMeasure(t *testing.T) {
 	read.Returned.add(0)
 	if !read.Reads() || read.Inefficiency() != 2000 {
 		t.Errorf("a read reported an inefficiency of %v, want 2000", read.Inefficiency())
+	}
+}
+
+// A sample of a write is shown beside the shape it belongs to, so it has to be the same execution
+// the shape counted: the envelope's duration, waits and command, not the statement half alone.
+func TestSampledWritesAreThePairedExecution(t *testing.T) {
+	when := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
+	for _, testcase := range []struct{ statement, envelope, operation string }{
+		{`{"type":"update","ns":"app.orders","command":{"q":{"_id":1},"u":{"$set":{"a":1}}},"planSummary":"IDHACK","durationMillis":50}`,
+			`{"type":"command","ns":"app.$cmd","command":{"update":"orders","writeConcern":{"w":"majority"}},"durationMillis":900,"waitForWriteConcernDurationMillis":840}`,
+			"update"},
+		{`{"type":"remove","ns":"app.orders","command":{"q":{"_id":1},"limit":1},"planSummary":"IDHACK","durationMillis":50}`,
+			`{"type":"command","ns":"app.$cmd","command":{"delete":"orders","writeConcern":{"w":"majority"}},"durationMillis":900,"waitForWriteConcernDurationMillis":840}`,
+			"delete"},
+	} {
+		t.Run(testcase.operation, func(t *testing.T) {
+			s := NewSlowQueries()
+			sampled := SampleShapes(ShapeFilter{}, 3)
+			s.Sample(sampled)
+			s.Add(slowQuery(when, "conn7", testcase.statement))
+			s.Add(slowQuery(when, "conn7", testcase.envelope))
+			shapes := s.Shapes()
+			if len(shapes) != 1 || shapes[0].Operation != testcase.operation {
+				t.Fatalf("shapes %+v, want one %s", shapes, testcase.operation)
+			}
+			lead := shapes[0]
+			runs := sampled.Of(lead.Namespace, lead.Operation, lead.Plan, lead.ID)
+			if len(runs) != 1 {
+				t.Fatalf("sampled %d executions of the paired shape, want 1", len(runs))
+			}
+			run := runs[0]
+			if run.Millis != 900 || run.Waits["write concern"] != 840 || run.Plan != "IDHACK" {
+				t.Fatalf("sample is not the paired execution: %+v", run)
+			}
+			if !strings.Contains(string(run.Command), "writeConcern") {
+				t.Fatalf("sample lost the envelope's command: %s", run.Command)
+			}
+		})
 	}
 }

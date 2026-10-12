@@ -95,7 +95,7 @@ func Lay(results []label.Result, imbalances []label.Imbalance, skipped []label.S
 		stall.Ordinary = append(stall.Ordinary, *ordinary[source])
 	}
 	for _, im := range imbalances {
-		if im.Verdict != "balanced" {
+		if im.Comparison != label.ComparisonUnder {
 			stall.Imbalances = append(stall.Imbalances, im)
 		}
 	}

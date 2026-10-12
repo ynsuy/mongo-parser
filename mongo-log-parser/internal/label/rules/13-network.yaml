@@ -8,9 +8,7 @@ rules:
     title: "TCP retransmission"
     doc: >-
       Ratio of the host TCP RetransSegs counter advance to the OutSegs counter advance, across host
-      connections. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      connections.
     signal:
       mode: rate
       unit: "%"
@@ -30,10 +28,8 @@ rules:
   - name: net.listen_overflows
     title: "Listen queue overflows"
     doc: >-
-      Rate of the host TCP ListenOverflows counter; the counter does not identify a MongoDB connection
-      or client outcome. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      Rate of the host TCP ListenOverflows counter; the counter does not identify a MongoDB
+      connection or client outcome.
     signal:
       mode: rate
       unit: "/s"
@@ -44,15 +40,12 @@ rules:
       - {name: many, up: [1, 5]}
     elevated: 0.1
     min_change: 0.1
-    pairs_with: [connections.created, cpu.saturated]
+    pairs_with: [connections.created, cpu.busy_above_95]
 
   - name: net.resets
     title: "TCP connections reset"
     doc: >-
-      Established connections reset a second, host-wide. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Established connections reset a second, host-wide.
     signal:
       mode: rate
       unit: "/s"
@@ -63,10 +56,7 @@ rules:
   - name: net.traffic
     title: "mongod network traffic"
     doc: >-
-      Sum of the server's bytesIn and bytesOut counter rates, scaled to MB/s. Minute summaries use a
-      ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Sum of the server's bytesIn and bytesOut counter rates, scaled to MB/s.
     signal:
       mode: rate
       unit: "MB/s"

@@ -59,6 +59,24 @@ func assertJSONTimes(t *testing.T, value any, want map[string]time.Time) {
 	}
 }
 
+// A build still running has no end: it must not travel as the year 1.
+func TestUnfinishedIndexBuildHasNoFinishTime(t *testing.T) {
+	started := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	assertJSONTimes(t, IndexBuild{Started: started, Finished: started.Add(time.Minute)},
+		map[string]time.Time{"started_at": started, "finished_at": started.Add(time.Minute)})
+	data, err := json.Marshal(IndexBuild{Started: started, Outcome: "running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := fields["finished_at"]; exists {
+		t.Errorf("a running build reported a finish time: %s", data)
+	}
+}
+
 func TestUnknownLogBoundsAreOmittedFromJSON(t *testing.T) {
 	data, err := json.Marshal(NewActivity())
 	if err != nil {

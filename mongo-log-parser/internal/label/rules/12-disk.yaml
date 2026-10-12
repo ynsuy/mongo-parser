@@ -9,9 +9,11 @@ rules:
     doc: >-
       Device io_time counter advance divided by elapsed time; a high value does not establish device
       capacity exhaustion. Device coverage depends on the block-device counters present in FTDC;
-      logical devices may be absent. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      logical devices may be absent.
+    applies: >-
+      A device that serves requests in parallel, such as an SSD, NVMe or network volume, can show
+      io_time near 100 % with capacity to spare; disk.await shows whether requests waited.
+      Device-mapper (dm-*) devices are not read by this tool; the disks under them are.
     signal:
       mode: rate
       unit: "%"
@@ -26,16 +28,18 @@ rules:
       - {name: very_high, up: [92, 97]}
     elevated: 85
     min_change: 15
-    pairs_with: [disk.saturated, disk.await, disk.queue, disk.iops, disk.throughput]
+    pairs_with: [disk.busy_above_95, disk.await, disk.queue, disk.iops, disk.throughput]
     open_with: [disk.await]
 
-  - name: disk.saturated
+  - name: disk.busy_above_95
     title: "Device-busy samples above 95%"
     doc: >-
-      Share of valid samples with the signal strictly above 95 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which a device's io_time advanced by more than 95 % of the elapsed
+      time, normalized to a 60-second minute.
+    applies: >-
+      A device that serves requests in parallel, such as an SSD, NVMe or network volume, can show
+      io_time near 100 % with capacity to spare; disk.await shows whether requests waited.
+      Device-mapper (dm-*) devices are not read by this tool; the disks under them are.
     signal:
       mode: rate
       unit: "%"
@@ -57,10 +61,8 @@ rules:
   - name: disk.await
     title: "Disk time per request"
     doc: >-
-      Average milliseconds a read or write took on each device, queueing included — what iostat calls
-      await. Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric
-      bands and thresholds are fixed descriptive references, not a diagnosis or a discovered server
-      limit. Paired labels are navigation links, not causal claims.
+      Average milliseconds a read or write took on each device, queueing included — what iostat
+      calls await.
     signal:
       mode: rate
       unit: "ms"
@@ -80,9 +82,7 @@ rules:
   - name: disk.read_await
     title: "Disk time per read"
     doc: >-
-      Average milliseconds a read took on each device. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Average milliseconds a read took on each device.
     signal:
       mode: rate
       unit: "ms"
@@ -98,9 +98,7 @@ rules:
   - name: disk.write_await
     title: "Disk time per write"
     doc: >-
-      Average milliseconds a write took on each device. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Average milliseconds a write took on each device.
     signal:
       mode: rate
       unit: "ms"
@@ -116,10 +114,8 @@ rules:
   - name: disk.queue
     title: "Disk requests in flight"
     doc: >-
-      Average number of requests outstanding on each device over the minute (io_queued time over wall
-      time). Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric
-      bands and thresholds are fixed descriptive references, not a diagnosis or a discovered server
-      limit. Paired labels are navigation links, not causal claims.
+      Average number of requests outstanding on each device over the minute (io_queued time over
+      wall time).
     signal:
       mode: rate
       unit: "requests"
@@ -138,9 +134,7 @@ rules:
   - name: disk.iops
     title: "Disk requests a second"
     doc: >-
-      Reads plus writes a second on each device. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Reads plus writes a second on each device.
     signal:
       mode: rate
       unit: "/s"
@@ -152,10 +146,7 @@ rules:
   - name: disk.throughput
     title: "Disk throughput"
     doc: >-
-      Megabytes a second read plus written on each device (sectors are 512 bytes). Minute summaries
-      use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are
-      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Megabytes a second read plus written on each device (sectors are 512 bytes).
     signal:
       mode: rate
       unit: "MB/s"

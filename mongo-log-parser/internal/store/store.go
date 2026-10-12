@@ -15,7 +15,7 @@ import (
 
 // SchemaVersion changes whenever a table changes shape or what ingest writes into it changes
 // meaning; a store written under another version is rebuilt rather than misread.
-const SchemaVersion = "3"
+const SchemaVersion = "5"
 
 const schema = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -84,6 +84,7 @@ CREATE TABLE ftdc (
   first_ts INTEGER, last_ts INTEGER,
   chunks INTEGER NOT NULL DEFAULT 0,
   files INTEGER NOT NULL DEFAULT 0,
+  paths TEXT NOT NULL DEFAULT '[]', -- the files it was read from, as a JSON array; never the whole dir
   note TEXT NOT NULL DEFAULT ''
 );
 

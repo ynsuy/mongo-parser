@@ -320,7 +320,13 @@ type SlowQueries struct {
 	// pending holds write statements waiting for the command envelope that wraps them, keyed by the
 	// source and log context — connection names are only unique within a node. See pendingWrite.
 	pending map[string]pendingWrite
+	// sample, when attached, is offered every execution as it is counted.
+	sample *Executions
 }
+
+// Sample attaches a sampler: every execution counted from here on is offered to it after write
+// pairing. Its samples are complete once Shapes or another aggregate has flushed the pairing.
+func (s *SlowQueries) Sample(e *Executions) { s.sample = e }
 
 func NewSlowQueries() *SlowQueries {
 	return &SlowQueries{shapes: map[string]*Shape{}, pending: map[string]pendingWrite{}}
@@ -345,22 +351,6 @@ type pendingWrite struct {
 // server that logged the statement and was killed before the command finished. Beyond it the oldest
 // entries are simply counted as they stand, which is what happened before any of this existed.
 const pendingLimit = 1 << 16
-
-// Describe reads the identity of a slow query line: which collection, which operation, which plan
-// and which logged hash. It is what makes a raw record comparable to a Shape, which is how a sample
-// of real executions can be collected for a shape without the shape existing yet.
-func Describe(record Record) (namespace, operation, plan, hash string, ok bool) {
-	if record.Msg != "Slow query" {
-		return "", "", "", "", false
-	}
-	var attributes slowAttributes
-	if !record.DecodeAttributes(&attributes) {
-		return "", "", "", "", false
-	}
-	operation, collection := operationOf(attributes)
-	return namespaceOf(attributes.Namespace, collection), operation, planOf(attributes.PlanSummary),
-		loggedHash(attributes), true
-}
 
 // Add counts one record; anything that is not a slow query is ignored.
 func (s *SlowQueries) Add(record Record) {
@@ -468,6 +458,7 @@ func (s *SlowQueries) flush() {
 
 // count folds one line, already paired if it had a pair, into its shape.
 func (s *SlowQueries) count(record Record, attributes slowAttributes) {
+	s.sample.offer(record, attributes)
 	operation, collection := operationOf(attributes)
 	namespace := namespaceOf(attributes.Namespace, collection)
 	plan := planOf(attributes.PlanSummary)

@@ -8,10 +8,7 @@ rules:
   - name: connections.used
     title: "Current connections as a share of current plus available"
     doc: >-
-      Reported current connections divided by current plus available connections. Minute summaries use
-      a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Reported current connections divided by current plus available connections.
     signal:
       mode: gauge
       unit: "%"
@@ -30,10 +27,8 @@ rules:
   - name: connections.scarce
     title: "Samples with under 10% of connections left"
     doc: >-
-      Share of valid samples with the signal strictly below 10 % available, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which available connections were strictly below 10 % of current plus
+      available, normalized to a 60-second minute.
     signal:
       mode: gauge
       unit: "% available"
@@ -55,10 +50,7 @@ rules:
   - name: connections.created
     title: "New connections"
     doc: >-
-      Rate of the server's totalCreated connection counter. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Rate of the server's totalCreated connection counter.
     signal:
       mode: rate
       unit: "conn/s"
@@ -74,13 +66,11 @@ rules:
   # "active" counts every connection with an operation in progress, and that includes each driver's
   # monitoring connections parked in an awaitable hello (awaitingTopologyChanges). They are not work,
   # so they are taken out of both labels below.
-  - name: connections.idle
+  - name: connections.non_active
     title: "Derived non-active connection count"
     doc: >-
-      Derived connection count: current plus awaitingTopologyChanges minus active; it is not evidence
-      of unused client pools or a connection leak. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Derived connection count: current plus awaitingTopologyChanges minus active; it is not
+      evidence of unused client pools or a connection leak.
     since: "4.4"
     signal:
       mode: gauge
@@ -99,9 +89,7 @@ rules:
     title: "Derived active-connection share"
     doc: >-
       Derived active-connection share: active minus awaitingTopologyChanges divided by current
-      connections. Minute summaries select the highest valid sample. Numeric bands and thresholds are
-      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      connections. Minute summaries select the highest valid sample.
     since: "4.4"
     signal:
       mode: gauge
@@ -123,24 +111,19 @@ rules:
   - name: connections.current
     title: "Open connections"
     doc: >-
-      Count reported for currently open server connections. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Count reported for currently open server connections.
     signal:
       mode: gauge
       unit: "conns"
       num: ["serverStatus/connections/current"]
     min_change: 50
-    pairs_with: [connections.idle, connections.created, memory.heap_outside_cache]
+    pairs_with: [connections.non_active, connections.created, memory.heap_outside_cache]
 
   - name: connections.rejected
     title: "Connections refused"
     doc: >-
       Rate of the server's rejected connection counter; client impact and rejection cause are not
-      inferred. Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric
-      bands and thresholds are fixed descriptive references, not a diagnosis or a discovered server
-      limit. Paired labels are navigation links, not causal claims.
+      inferred.
     since: "6.3"
     signal:
       mode: rate

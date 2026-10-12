@@ -38,6 +38,19 @@ func (it *item) dir() string {
 	return it.ftdc.Origin
 }
 
+// nodeDir is the directory that stands for a node: the item's own, or the first one above it
+// whose name is not one every node shares. mongod writes FTDC into diagnostic.data whichever node
+// it is, so node-a/diagnostic.data belongs to node-a.
+func nodeDir(dir string) string {
+	for {
+		i := strings.LastIndexAny(dir, "/!")
+		if i < 0 || !generic[strings.ToLower(dir[i+1:])] {
+			return dir
+		}
+		dir = dir[:i]
+	}
+}
+
 // path is where this came from, archives included: the directory a name may be written on, plus
 // the file's own name, which sometimes carries it instead.
 func (it *item) path() string {
@@ -345,6 +358,39 @@ func resolveNodes(streams []streamRow, ftdcs []ftdcRow) []*nodeRow {
 		}
 		it.evidence = append(it.evidence, "file name only: no line in it says which process wrote it")
 	}
+	// 7. An FTDC stream left on its own joins the logs left on their own in its node's directory,
+	// when there is one of each there: a collector that wrote node-a/mongod.log beside
+	// node-a/diagnostic.data has said they are one process in the only place left.
+	alone := func(stream bool) map[string]map[int]bool {
+		out := map[string]map[int]bool{}
+		for i, it := range items {
+			if len(it.names) > 0 || placed[i] || (it.stream != nil) != stream {
+				continue
+			}
+			d := nodeDir(it.dir())
+			if out[d] == nil {
+				out[d] = map[int]bool{}
+			}
+			out[d][uf.find(i)] = true
+		}
+		return out
+	}
+	logsAlone, ftdcAlone := alone(true), alone(false)
+	for d, ftdcGroups := range ftdcAlone {
+		if len(ftdcGroups) != 1 || len(logsAlone[d]) != 1 {
+			continue
+		}
+		for f := range ftdcGroups {
+			for l := range logsAlone[d] {
+				uf.join(f, l)
+			}
+		}
+		for i, it := range items {
+			if it.ftdc != nil && len(it.names) == 0 && !placed[i] && nodeDir(it.dir()) == d {
+				it.evidence = append(it.evidence, "no identity of its own: the only FTDC beside the only unnamed log in "+d)
+			}
+		}
+	}
 
 	groups := map[int][]*item{}
 	var order []int
@@ -517,7 +563,16 @@ func describe(members []*item) *nodeRow {
 		})
 	}
 	if n.Name == "" {
-		n.Name = fallbackName(members[0])
+		// An FTDC stream is named after its node's directory, a log after its file as well, so
+		// the stream is the plainer name for the two together.
+		named := members[0]
+		for _, it := range members {
+			if it.ftdc != nil {
+				named = it
+				break
+			}
+		}
+		n.Name = fallbackName(named)
 		n.fallback = true
 	}
 
@@ -611,7 +666,7 @@ func fallbackName(it *item) string {
 	}
 	stem = strings.TrimSuffix(stem, ".gz")
 	stem = rotationDate.ReplaceAllString(stem, "")
-	where := dir
+	where := nodeDir(dir)
 	if i := strings.LastIndex(where, "!"); i >= 0 {
 		where = where[i+1:]
 	}
@@ -687,8 +742,12 @@ func (in *ingester) writeCatalogue(ftdcs []ftdcRow) ([]*nodeRow, error) {
 			if f.Chunks > 0 {
 				first, last = f.First, f.Last
 			}
-			if _, err := tx.Exec(`INSERT INTO ftdc(dir, origin, host, node, first_ts, last_ts, chunks, files, note) VALUES (?,?,?,?,?,?,?,?,?)`,
-				f.Dir, f.Origin, f.Identity.Host, n.ID, first, last, f.Chunks, f.Files, f.Note); err != nil {
+			paths, err := json.Marshal(f.Paths)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := tx.Exec(`INSERT INTO ftdc(dir, origin, host, node, first_ts, last_ts, chunks, files, paths, note) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+				f.Dir, f.Origin, f.Identity.Host, n.ID, first, last, f.Chunks, f.Files, string(paths), f.Note); err != nil {
 				return nil, err
 			}
 		}

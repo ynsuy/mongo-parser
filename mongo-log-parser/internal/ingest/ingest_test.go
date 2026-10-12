@@ -3,7 +3,9 @@ package ingest
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,6 +45,31 @@ func TestFTDCCopiesRequireMatchingContents(t *testing.T) {
 	}
 }
 
+// An archive and its unpacked copy are one diagnostic.data. Each file is read once, from whichever
+// copy came first, so the files end up spread over both; they are still one stream, not two that
+// each hold part of the day.
+func TestFTDCSplitAcrossCopiesIsOneStream(t *testing.T) {
+	in := &ingester{ftdcDir: t.TempDir(), ftdc: map[string]*ftdcGroup{}, seenFTDC: map[string]string{}}
+	add := func(dir, name string) {
+		t.Helper()
+		entry := &source.Entry{Path: dir + "/" + name, Dir: dir, Name: name, Size: int64(len(name)), Kind: source.FTDC}
+		if err := in.visit(entry, strings.NewReader(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("node-a.zip!diagnostic.data", "metrics.1")
+	add("node-a/diagnostic.data", "metrics.1")
+	add("node-a/diagnostic.data", "metrics.2")
+	add("node-b/diagnostic.data", "metrics.3")
+	rows := in.indexFTDC()
+	if len(rows) != 2 {
+		t.Fatalf("got %d streams, want node-a's and node-b's: %+v", len(rows), rows)
+	}
+	if rows[0].Origin != "node-a.zip!diagnostic.data" || len(rows[0].Paths) != 2 || len(rows[1].Paths) != 1 {
+		t.Errorf("node-a's two files are not one stream: %+v", rows)
+	}
+}
+
 func TestFTDCReadFailureDoesNotRegisterCopy(t *testing.T) {
 	in := &ingester{ftdcDir: t.TempDir(), ftdc: map[string]*ftdcGroup{}, seenFTDC: map[string]string{}}
 	want := errors.New("interrupted FTDC input")
@@ -51,6 +78,13 @@ func TestFTDCReadFailureDoesNotRegisterCopy(t *testing.T) {
 	if !errors.Is(err, want) || len(in.seenFTDC) != 0 || len(in.ftdc) != 0 {
 		t.Fatalf("incomplete contents registered: err=%v hashes=%v streams=%v", err, in.seenFTDC, in.ftdc)
 	}
+	// Nothing of it may stay on disk either: a later read of the directory would find it.
+	_ = filepath.Walk(in.ftdcDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			t.Errorf("incomplete file left behind: %s", path)
+		}
+		return nil
+	})
 }
 
 // The server's own truncation note follows attr in an export's message; it is not part of attr.
@@ -218,6 +252,29 @@ func TestAPathThatNamesTwoNodesNamesNeither(t *testing.T) {
 		if strings.HasPrefix(n.Name, "mongo1.") && len(n.members) != 1 {
 			t.Errorf("mongo1 took a log written in a directory named after mongo11")
 		}
+	}
+}
+
+// A collector that writes each node's log beside its diagnostic.data has named the node in the only
+// place it could, when neither file says whose it is. The FTDC is that directory's node, not a node
+// called diagnostic.data; two FTDC streams in one directory settle nothing.
+func TestUnnamedFTDCJoinsTheUnnamedLogBesideIt(t *testing.T) {
+	logs := []streamRow{
+		{Dir: "bundle/node-a", Name: "mongod.log", Stats: Stats{Lines: 1}},
+		{Dir: "bundle/node-b", Name: "mongod.log", Stats: Stats{Lines: 1}},
+	}
+	ftdcs := []ftdcRow{
+		{Origin: "bundle/node-a/diagnostic.data", Chunks: 1},
+		{Origin: "bundle/node-b/diagnostic.data", Chunks: 1},
+		{Origin: "bundle/node-b/mongodb/diagnostic.data", Chunks: 1},
+	}
+	var got []string
+	for _, n := range resolveNodes(logs, ftdcs) {
+		got = append(got, fmt.Sprintf("%s:%d", n.Name, len(n.members)))
+	}
+	want := []string{"node-a:2", "node-b:1", "node-b:1", "node-b/mongod:1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("nodes %v, want %v", got, want)
 	}
 }
 

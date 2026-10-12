@@ -107,7 +107,8 @@ type Executions struct {
 	byKey  map[string][]Execution
 }
 
-// SampleShapes keeps up to limit executions of every shape the filter admits.
+// SampleShapes keeps up to limit executions of every shape the filter admits. It is fed by the
+// SlowQueries it is attached to (see SlowQueries.Sample), not by reading records itself.
 func SampleShapes(filter ShapeFilter, limit int) *Executions {
 	return &Executions{filter: filter, limit: max(limit, 0), byKey: map[string][]Execution{}}
 }
@@ -116,16 +117,17 @@ func SampleShapes(filter ShapeFilter, limit int) *Executions {
 // with thousands of shapes cannot grow without limit.
 const maxSampledShapes = 200
 
-func (e *Executions) Add(record Record) {
-	if e.limit == 0 {
+// offer considers one execution as SlowQueries counted it: a write already folded into the command
+// envelope that wrapped it, so the sample carries the duration, waits and command the client saw,
+// under the same identity as the shape it is shown beside. Reading raw lines instead would sample
+// the statement half of a write, which has neither the client's wait nor its write concern.
+func (e *Executions) offer(record Record, attributes slowAttributes) {
+	if e == nil || e.limit == 0 {
 		return
 	}
-	namespace, operation, plan, hash, ok := Describe(record)
-	if !ok || !e.filter.matches(namespace, operation, plan, hash) {
-		return
-	}
-	var attributes slowAttributes
-	if !record.DecodeAttributes(&attributes) {
+	operation, collection := operationOf(attributes)
+	namespace, plan, hash := namespaceOf(attributes.Namespace, collection), planOf(attributes.PlanSummary), loggedHash(attributes)
+	if !e.filter.matches(namespace, operation, plan, hash) {
 		return
 	}
 	key := namespace + "\x00" + operation + "\x00" + plan + "\x00" + hash

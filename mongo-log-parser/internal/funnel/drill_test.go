@@ -1,6 +1,7 @@
 package funnel
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -74,7 +75,19 @@ func TestAMomentComesBackSecondBySecond(t *testing.T) {
 	if rows[1].Values[0] != 0 || rows[1].Values[1] != 100 || rows[1].Repeat != 9 || !rows[1].At.Equal(start.Add(time.Hour)) {
 		t.Fatalf("the first empty run starts at 11:00:00 for ten seconds, none left and all in use: %+v", rows[1])
 	}
-	if len(opened.Columns(opened.Focus[0])) != len(rows[0].Values) {
+	if len(opened.Focus[0].Columns) != len(rows[0].Values) {
 		t.Fatal("a column name for every value")
+	}
+}
+
+// A second a column has no sample for is written as null, so a window with a gap in one pair still
+// comes back as JSON rather than as an encoding error.
+func TestASecondWithoutASampleIsNull(t *testing.T) {
+	got, err := json.Marshal(Row{At: start, Values: Values{1, math.NaN()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"at":"2026-09-03T10:00:00Z","values":[1,null]}`; string(got) != want {
+		t.Errorf("got %s, want %s", got, want)
 	}
 }

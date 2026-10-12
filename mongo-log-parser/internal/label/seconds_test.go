@@ -87,7 +87,7 @@ func TestADynamicPoolIsReadAgainstItsOwnSize(t *testing.T) {
 }
 
 // Twenty seconds pinned each minute and idle the rest averages to about a third busy. cpu.busy says
-// a third; cpu.saturated says twenty seconds of every minute.
+// a third; cpu.busy_above_95 says twenty seconds of every minute.
 func TestSecondsPinnedAreCountedNotAveraged(t *testing.T) {
 	results := run(samplesFor(2*3600, cpuBySecond(func(i int) float64 {
 		if i%60 < 20 {
@@ -102,7 +102,7 @@ func TestSecondsPinnedAreCountedNotAveraged(t *testing.T) {
 	if busy.PeakSecond != 100 {
 		t.Fatalf("the busiest second was 100%%, got %v", busy.PeakSecond)
 	}
-	saturated := find(t, results, "cpu.saturated", "")
+	saturated := find(t, results, "cpu.busy_above_95", "")
 	if saturated.Typical != 20 || saturated.Level["frequent"] != 1 || saturated.Duty.Label != "always" {
 		t.Fatalf("saturated %.1f s/min %v duty %+v, want 20, frequent, always", saturated.Typical, saturated.Level, saturated.Duty)
 	}
@@ -111,7 +111,7 @@ func TestSecondsPinnedAreCountedNotAveraged(t *testing.T) {
 // A minute that lost most of its samples is not a minute: twenty seconds of a gap's edge would
 // otherwise count as a third of a minute pinned.
 func TestAPartialMinuteIsLeftOut(t *testing.T) {
-	r := rule(t, "cpu.saturated")
+	r := rule(t, "cpu.busy_above_95")
 	seconds := make([]Second, 0, 80)
 	for i := range 80 {
 		seconds = append(seconds, Second{At: start.Add(time.Duration(i) * time.Second), Value: 100, num: 100, den: 1})

@@ -33,10 +33,14 @@ type ruleEntry struct {
 func ruleCatalogue() []ruleEntry {
 	out := make([]ruleEntry, 0, len(label.Rules))
 	for _, r := range label.Rules {
-		out = append(out, ruleEntry{Rule: r, Unit: r.Unit(), Formula: formula(r), Reading: readOn(r),
-			Bands: levelText(r.Levels), Versions: r.VersionText()})
+		out = append(out, catalogueEntry(r))
 	}
 	return out
+}
+
+func catalogueEntry(r label.Rule) ruleEntry {
+	return ruleEntry{Rule: r, Unit: r.Unit(), Formula: formula(r), Reading: readOn(r),
+		Bands: levelText(r.Levels), Versions: r.VersionText()}
 }
 
 func labelText() string {
@@ -50,12 +54,26 @@ func labelText() string {
 			lines = append(lines, fmt.Sprintf("  mark:    %g %s (the duty cycle counts the minutes at or past it)", *r.Elevated, r.Unit()))
 		}
 		lines = append(lines, fmt.Sprintf("  change:  %g %s is the smallest move that counts", r.MinChange, r.Unit()))
+		if ref := referenceText(r); ref != "" {
+			lines = append(lines, "  ref:     "+ref)
+		}
+		if r.Applies != "" {
+			lines = append(lines, "  applies: "+strings.Join(strings.Fields(r.Applies), " "))
+		}
 		if len(r.PairsWith) > 0 {
 			lines = append(lines, "  pairs:   "+strings.Join(r.PairsWith, ", "))
 		}
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// referenceText names the server default a rule's fixed number comes from, or "".
+func referenceText(r label.Rule) string {
+	if r.Reference == nil {
+		return ""
+	}
+	return fmt.Sprintf("%g %s is %s; the configured value is %s", r.Reference.Value, r.Reference.Unit, r.Reference.Source, r.Reference.Configured)
 }
 
 // formula is how one second's value is computed, as a person would write it.

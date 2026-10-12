@@ -103,6 +103,30 @@ func TestHealthAttributeMatchHasExplicitProvenance(t *testing.T) {
 	}
 }
 
+// A signal matched both ways keeps one example of each, and each says what matched where: an
+// attribute match is not shown as if its message had said it.
+func TestHealthExamplesSayWhatMatchedAndWhere(t *testing.T) {
+	health := readHealth(t, `{"t":{"$date":"2026-09-03T10:00:00Z"},"s":"E","c":"NETWORK","id":22988,"ctx":"conn1","msg":"Request failed","attr":{"error":"HostUnreachable"}}
+{"t":{"$date":"2026-09-03T10:01:00Z"},"s":"I","c":"NETWORK","id":1,"ctx":"conn2","msg":"Connection refused by peer","attr":{}}
+{"t":{"$date":"2026-09-03T10:02:00Z"},"s":"E","c":"NETWORK","id":22988,"ctx":"conn3","msg":"Request failed","attr":{"error":"HostUnreachable"}}
+`)
+	signal, found := health.Get("network_error")
+	if !found || len(signal.Examples) != 2 {
+		t.Fatalf("want one example per basis: %+v", signal)
+	}
+	byBasis := map[string]MatchExample{}
+	for _, example := range signal.Examples {
+		byBasis[example.Basis] = example
+	}
+	attribute, message := byBasis["error_attributes"], byBasis["message_text"]
+	if attribute.Message != "Request failed" || attribute.Matched != "hostunreachable" || !strings.Contains(attribute.MatchedIn, "hostunreachable") || attribute.Source != "node-a" {
+		t.Errorf("attribute example: %+v", attribute)
+	}
+	if message.Message != "Connection refused by peer" || message.Matched != "connection refused" || message.MatchedIn != "" {
+		t.Errorf("message example: %+v", message)
+	}
+}
+
 // The server's own note that a scheduling slice overran by microseconds is not an operation giving
 // up on a lock, and a maxTimeMS expiry is not one either.
 func TestOnlyLockMessagesAreLockTimeouts(t *testing.T) {

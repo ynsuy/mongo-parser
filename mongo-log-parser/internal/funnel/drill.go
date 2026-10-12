@@ -1,6 +1,7 @@
 package funnel
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -38,6 +39,8 @@ type Focus struct {
 	// Seconds is the window second by second, the label and its pairs side by side, when the window
 	// was asked for. Rows that repeat the row before them are folded into it.
 	Seconds []Row `json:"seconds,omitempty"`
+	// Columns names each row's values in order: the label, then each pair the node has.
+	Columns []string `json:"columns,omitempty"`
 	// Evidence is what the logs said in the window, filled by whoever can read them.
 	Evidence any `json:"evidence,omitempty"`
 }
@@ -65,7 +68,20 @@ func (p Pair) Rule() label.Rule { return p.rule }
 type Row struct {
 	At     time.Time `json:"at"`
 	Repeat int       `json:"repeat,omitempty"` // further seconds that read the same
-	Values []float64 `json:"values"`           // the label, then each pair the node has, in their signal units
+	Values Values    `json:"values"`           // the label, then each pair the node has, in their signal units
+}
+
+// Values are one second's readings; a second a column has no sample for is NaN, written as null.
+type Values []float64
+
+func (v Values) MarshalJSON() ([]byte, error) {
+	out := make([]*float64, len(v))
+	for i := range v {
+		if !math.IsNaN(v[i]) {
+			out[i] = &v[i]
+		}
+	}
+	return json.Marshal(out)
 }
 
 const (
@@ -98,6 +114,7 @@ func Open(target label.Result, results []label.Result, samples *ftdc.Samples, fr
 		}
 		if table {
 			f.Seconds = rows(rule, seconds, pairs, samples, f.From, f.To, from, to)
+			f.Columns = columns(target, f.Pairs)
 		}
 		return f
 	}
@@ -201,7 +218,7 @@ func rows(rule label.Rule, seconds []label.Second, pairs []pairing, samples *ftd
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	out := make([]Row, 0, min(len(keys), maxRows))
 	for _, k := range keys {
-		values := make([]float64, len(columns))
+		values := make(Values, len(columns))
 		for i, c := range columns {
 			v, ok := c[k]
 			if !ok {
@@ -240,10 +257,10 @@ func same(a, b []float64) bool {
 	return true
 }
 
-// Columns names the columns of a focus window's seconds: the label, then each pair the node has.
-func (o Opened) Columns(f Focus) []string {
-	out := []string{fmt.Sprintf("%s (%s)", o.Result.Label, o.Result.SignalUnit)}
-	for _, p := range f.Pairs {
+// columns names the columns of a focus window's seconds: the label, then each pair the node has.
+func columns(target label.Result, pairs []Pair) []string {
+	out := []string{fmt.Sprintf("%s (%s)", target.Label, target.SignalUnit)}
+	for _, p := range pairs {
 		if p.Missing != "" {
 			continue
 		}

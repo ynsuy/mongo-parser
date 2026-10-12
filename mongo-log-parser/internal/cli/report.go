@@ -341,6 +341,7 @@ func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, m
 	// them would cost as much as the labels.
 	want := func(path string) bool { return replMemberMetric(path) || label.Wants(path) }
 	results, unlabelled := make([]label.Result, 0, 64), make([]label.Skip, 0, 16)
+	peers := make(map[string]string, len(set.streams))
 	for i, stream := range set.streams {
 		source := set.sources[i]
 		samples, err := stream.Read(start, end, want, nil)
@@ -352,9 +353,18 @@ func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, m
 		labelled, skipped := label.Run(samples, source, stream.Identity().Version, start, end)
 		results = append(results, labelled...)
 		unlabelled = append(unlabelled, skipped...)
-		if state, ok := replMemberOf(samples, source); ok {
+		state, ok := replMemberOf(samples, source)
+		if ok {
 			states = append(states, state)
 		}
+		role := ""
+		if i < len(set.roles) {
+			role = set.roles[i]
+		}
+		if role == "" {
+			role = stream.Identity().Process
+		}
+		peers[source] = peerOf(role, state, ok)
 		for _, v := range samples.Values[cacheSizeMetric] {
 			if !math.IsNaN(v) && v > 0 {
 				cache[source] = v
@@ -366,7 +376,7 @@ func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, m
 	}
 	sortMemberStates(states)
 	label.Relate(results)
-	return states, labels{results, label.Imbalances(results), unlabelled}, cache, failures
+	return states, labels{results, label.Imbalances(results, peers), unlabelled}, cache, failures
 }
 
 // cacheSizeMetric is the configured WiredTiger cache, which a label already reads and so is decoded.

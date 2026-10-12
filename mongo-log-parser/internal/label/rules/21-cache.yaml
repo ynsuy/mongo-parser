@@ -8,9 +8,7 @@ rules:
     title: "WiredTiger cache fill"
     doc: >-
       Bytes in the WiredTiger cache as a share of its configured size, averaged over the minute.
-      Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+    reference: {value: 95, unit: "%", source: "WiredTiger default eviction_trigger; eviction_target defaults to 80"}
     signal:
       mode: gauge
       unit: "%"
@@ -24,15 +22,14 @@ rules:
       - {name: above_reference, up: [94, 96]}
     elevated: 95
     min_change: 5
-    pairs_with: [cache.over_trigger, cache.app_eviction, cache.read_in]
+    pairs_with: [cache.fill_above_95, cache.app_eviction, cache.read_in]
 
-  - name: cache.over_trigger
+  - name: cache.fill_above_95
     title: "Cache-fill samples above 95%"
     doc: >-
-      Share of valid samples with the signal strictly above 95 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which WiredTiger cache bytes were strictly above 95 % of the
+      configured cache size, normalized to a 60-second minute.
+    reference: {value: 95, unit: "%", source: "WiredTiger default eviction_trigger"}
     signal:
       mode: gauge
       unit: "%"
@@ -54,9 +51,7 @@ rules:
     title: "WiredTiger dirty cache"
     doc: >-
       Modified bytes not yet written, as a share of the configured cache, averaged over the minute.
-      Minute summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+    reference: {value: 20, unit: "%", source: "WiredTiger default eviction_dirty_trigger; eviction_dirty_target defaults to 5"}
     signal:
       mode: gauge
       unit: "%"
@@ -70,15 +65,14 @@ rules:
       - {name: above_reference, up: [19, 21]}
     elevated: 20
     min_change: 3
-    pairs_with: [cache.dirty_over_trigger, checkpoint.duration, disk.write_await, ops.writes]
+    pairs_with: [cache.dirty_above_20, checkpoint.duration, disk.write_await, ops.writes]
 
-  - name: cache.dirty_over_trigger
+  - name: cache.dirty_above_20
     title: "Dirty-cache samples above 20%"
     doc: >-
-      Share of valid samples with the signal strictly above 20 %, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which tracked dirty bytes were strictly above 20 % of the configured
+      cache size, normalized to a 60-second minute.
+    reference: {value: 20, unit: "%", source: "WiredTiger default eviction_dirty_trigger"}
     signal:
       mode: gauge
       unit: "%"
@@ -97,11 +91,8 @@ rules:
   - name: cache.app_eviction
     title: "Eviction by application threads"
     doc: >-
-      Rate of pages evicted by application threads; where the version uses attempts and failures, the
-      signal subtracts failure counts from attempt counts. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Rate of pages evicted by application threads; where the version uses attempts and failures,
+      the signal subtracts failure counts from attempt counts.
     until: "8.0.16"
     signal:
       mode: rate
@@ -113,16 +104,13 @@ rules:
       - {name: heavy, up: [10, 50]}
     elevated: 1
     min_change: 5
-    pairs_with: [cache.over_trigger, cache.dirty_over_trigger]
+    pairs_with: [cache.fill_above_95, cache.dirty_above_20]
 
   - name: cache.app_eviction
     title: "Eviction by application threads"
     doc: >-
-      Rate of pages evicted by application threads; where the version uses attempts and failures, the
-      signal subtracts failure counts from attempt counts. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Rate of pages evicted by application threads; where the version uses attempts and failures,
+      the signal subtracts failure counts from attempt counts.
     since: "8.0.16"
     signal:
       mode: rate
@@ -132,15 +120,13 @@ rules:
     levels: *app_eviction_levels
     elevated: 1
     min_change: 5
-    pairs_with: [cache.over_trigger, cache.dirty_over_trigger, cache.app_eviction_time]
+    pairs_with: [cache.fill_above_95, cache.dirty_above_20, cache.app_eviction_time]
 
   - name: cache.app_eviction_time
     title: "Time operations spent evicting"
     doc: >-
       Application-thread eviction time counter advance per elapsed second, summed across threads, in
-      milliseconds. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      milliseconds.
     since: "8.0"
     signal:
       mode: rate
@@ -153,15 +139,12 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [cache.app_eviction, cache.over_trigger, cache.dirty_over_trigger]
+    pairs_with: [cache.app_eviction, cache.fill_above_95, cache.dirty_above_20]
 
   - name: cache.read_in
     title: "Data read into the cache"
     doc: >-
-      WiredTiger bytes-read-into-cache counter advance per elapsed second, scaled to MB/s. Minute
-      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      WiredTiger bytes-read-into-cache counter advance per elapsed second, scaled to MB/s.
     signal:
       mode: rate
       unit: "MB/s"
@@ -174,10 +157,9 @@ rules:
   - name: checkpoint.duration
     title: "Checkpoint duration"
     doc: >-
-      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint value
-      may appear in multiple samples. Minute summaries select the highest valid sample. Numeric bands
-      and thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint
+      value may appear in multiple samples. Minute summaries select the highest valid sample.
+    reference: {value: 60, unit: "s", source: "default checkpoint interval, storage.syncPeriodSecs"}
     until: "7.1"
     signal:
       mode: gauge
@@ -196,10 +178,9 @@ rules:
   - name: checkpoint.duration
     title: "Checkpoint duration"
     doc: >-
-      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint value
-      may appear in multiple samples. Minute summaries select the highest valid sample. Numeric bands
-      and thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      Duration recorded for the most recent WiredTiger checkpoint; the same completed-checkpoint
+      value may appear in multiple samples. Minute summaries select the highest valid sample.
+    reference: {value: 60, unit: "s", source: "default checkpoint interval, storage.syncPeriodSecs"}
     since: "7.1"
     signal:
       mode: gauge
@@ -215,10 +196,8 @@ rules:
   - name: checkpoint.running
     title: "Samples with checkpoint activity"
     doc: >-
-      Share of valid samples with the signal strictly above 0 running, normalized to a 60-second
-      minute. This is a normalized sample share, not measured continuous elapsed duration; cadence and
-      gaps must be checked. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which WiredTiger reported a checkpoint as currently running,
+      normalized to a 60-second minute.
     until: "7.1"
     signal:
       mode: gauge
@@ -232,15 +211,15 @@ rules:
       - {name: continuous, up: [48, 57]}
     elevated: 48
     min_change: 9
-    pairs_with: [checkpoint.duration, disk.saturated, cache.dirty]
+    pairs_with: [checkpoint.duration, disk.busy_above_95, cache.dirty]
 
   - name: checkpoint.running
     title: "Samples with checkpoint activity"
     doc: >-
-      Share of valid samples with the signal strictly above 0 state, normalized to a 60-second minute.
-      This is a normalized sample share, not measured continuous elapsed duration; cadence and gaps
-      must be checked. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Share of valid samples in which WiredTiger's checkpoint progress state was non-zero,
+      normalized to a 60-second minute.
+    applies: >-
+      The progress state's values are not decoded; any non-zero value is read as activity.
     since: "7.1"
     signal:
       mode: gauge
@@ -251,15 +230,12 @@ rules:
     levels: *checkpoint_time_levels
     elevated: 48
     min_change: 9
-    pairs_with: [checkpoint.duration, disk.saturated, cache.dirty]
+    pairs_with: [checkpoint.duration, disk.busy_above_95, cache.dirty]
 
   - name: storage.open_handles
     title: "Open data handles"
     doc: >-
-      Count reported by WiredTiger for currently open data handles. Minute summaries use a ratio of
-      sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Count reported by WiredTiger for currently open data handles.
     signal:
       mode: gauge
       unit: "handles"

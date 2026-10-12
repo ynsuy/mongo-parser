@@ -55,7 +55,7 @@ func runLabel(root string, args []string) error {
 		return err
 	}
 	if len(set.streams) == 0 {
-		return emit(os.Stdout, c.json, "label", root, []funnel.Opened{}, withVersion("no FTDC in this bundle, so there are no labels to open"))
+		return emit(os.Stdout, c.json, "label", root, []openedEntry{}, withVersion("no FTDC in this bundle, so there are no labels to open"))
 	}
 	start, end, err := w.resolve(st, set.last)
 	if err != nil {
@@ -77,9 +77,13 @@ func runLabel(root string, args []string) error {
 
 	// Every node FTDC names, not only the ones asked about: a log matched by a short name is only
 	// as certain as the number of nodes that share it.
-	_, everyNode, err := ftdcStreams(st, nil)
+	streams, err := ftdcStreams(st, nil)
 	if err != nil {
 		return err
+	}
+	everyNode := make([]string, len(streams))
+	for i, f := range streams {
+		everyNode[i] = f.label
 	}
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	opened := make([]funnel.Opened, 0, len(set.streams))
@@ -118,7 +122,18 @@ func runLabel(root string, args []string) error {
 	if len(notes) > 0 {
 		text = strings.TrimSpace(text + "\n\n" + strings.Join(notes, "\n"))
 	}
-	return emit(os.Stdout, c.json, "label", root, opened, withVersion(text))
+	entries := make([]openedEntry, 0, len(opened))
+	for _, o := range opened {
+		entries = append(entries, openedEntry{Opened: o, Rule: catalogueEntry(o.Result.Rule())})
+	}
+	return emit(os.Stdout, c.json, "label", root, entries, withVersion(text))
+}
+
+// openedEntry is one opened label with the definition it was read against, so the reading travels
+// with what the rule measures, its reference and when it applies.
+type openedEntry struct {
+	funnel.Opened
+	Rule ruleEntry `json:"rule"`
 }
 
 // whyNotLabelled says why a node has no reading of the label asked for.
@@ -159,10 +174,17 @@ func renderOpened(o funnel.Opened, options render.TableOptions) string {
 	head := fmt.Sprintf("%s on %s", strings.TrimSpace(r.Label+" "+r.Instance), r.Source)
 	lines := []string{head, strings.Repeat("─", min(len(head), 72)),
 		rule.Title + ". " + strings.Join(strings.Fields(rule.Doc), " "),
-		"",
+	}
+	if ref := referenceText(rule); ref != "" {
+		lines = append(lines, "Reference: "+ref+".")
+	}
+	if rule.Applies != "" {
+		lines = append(lines, "Applies: "+strings.Join(strings.Fields(rule.Applies), " "))
+	}
+	lines = append(lines, "",
 		fmt.Sprintf("usual %s · worst minute %s at %s · worst second %s · %s",
 			levelReading(r, r.Typical), levelReading(r, r.Peak), r.PeakAt.Format("15:04"), worstSecondOf(r), r.Shape),
-	}
+	)
 	if w := when(r); r.Shape != "steady" && r.Shape != "constant" {
 		lines = append(lines, "when: "+w)
 	}
@@ -251,7 +273,7 @@ func renderFocus(o funnel.Opened, f funnel.Focus, options render.TableOptions) s
 		{Title: "Usually", Values: usual, Drop: 1},
 	}, options))
 	if len(f.Seconds) > 0 {
-		lines = append(lines, "", secondsTable(o, f, options))
+		lines = append(lines, "", secondsTable(f, options))
 	}
 	if e, ok := f.Evidence.(evidence); ok {
 		lines = append(lines, "", evidenceText(e))
@@ -276,8 +298,8 @@ func windowText(rule label.Rule, unit string, w label.Window) string {
 }
 
 // secondsTable prints a window second by second, a repeated row folded into the row before it.
-func secondsTable(o funnel.Opened, f funnel.Focus, options render.TableOptions) string {
-	columns := o.Columns(f)
+func secondsTable(f funnel.Focus, options render.TableOptions) string {
+	columns := f.Columns
 	at := make([]string, len(f.Seconds))
 	values := make([][]string, len(columns))
 	for i, row := range f.Seconds {

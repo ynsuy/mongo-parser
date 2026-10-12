@@ -29,9 +29,29 @@ type Signal struct {
 	First         time.Time      `json:"first_at,omitzero"`
 	Last          time.Time      `json:"last_at,omitzero"`
 	Sources       map[string]int `json:"sources"`
-	Example       string         `json:"example,omitempty"`
-	Next          string         `json:"next,omitempty"`
+	// Examples holds the first matched line for each match basis, with the pattern that matched and
+	// the text it matched in, so a match on a line's error attributes is not shown beside a message
+	// that never says what was matched.
+	Examples []MatchExample `json:"examples,omitempty"`
+	Next     string         `json:"next,omitempty"`
 }
+
+// MatchExample is one line a signal matched, and what in it matched.
+type MatchExample struct {
+	Basis   string    `json:"basis"`
+	At      time.Time `json:"at"`
+	Source  string    `json:"source"`
+	Message string    `json:"message"`
+	// Matched is the configured pattern found in the line; empty when the basis is the logged
+	// severity alone.
+	Matched string `json:"matched,omitempty"`
+	// MatchedIn is the lowercased attribute text the pattern was found in, when it was not the
+	// message, cut to exampleTextLimit bytes.
+	MatchedIn string `json:"matched_in,omitempty"`
+}
+
+// exampleTextLimit bounds the attribute text kept with an example.
+const exampleTextLimit = 300
 
 // Rate is how often this happened per minute over the span it was seen.
 func (s Signal) Rate() float64 {
@@ -146,7 +166,7 @@ func NewHealth() *Health {
 
 // Add counts one record against the condition its message names, if any.
 func (h *Health) Add(record Record) {
-	basis := "message_text"
+	basis, text := "message_text", ""
 	index, known := h.decided[record.Msg]
 	if !known {
 		index = matchRule(strings.ToLower(record.Msg))
@@ -158,7 +178,8 @@ func (h *Health) Add(record Record) {
 		// affordable precisely because those lines are the rare ones.
 		switch record.Sev {
 		case "F", "E", "W":
-			index = matchRule(errorText(record))
+			text = errorText(record)
+			index = matchRule(text)
 			basis = "error_attributes"
 		default:
 			return
@@ -171,24 +192,54 @@ func (h *Health) Add(record Record) {
 			return
 		}
 		h.count(Signal{Key: "fatal", Title: "the server logged a fatal line", Priority: "high",
-			Next: "logs --category " + string(Classify(record))}, record, "logged_severity_F")
+			Next: "logs --category " + string(Classify(record))}, record, "logged_severity_F", func() MatchExample {
+			return MatchExample{}
+		})
 		return
 	}
 	matched := rules[index]
 	h.count(Signal{Key: matched.key, Title: matched.title, Priority: matched.severity, Next: matched.next,
-		MatchAny: matched.any, MatchAll: matched.all, MatchNot: matched.not}, record, basis)
+		MatchAny: matched.any, MatchAll: matched.all, MatchNot: matched.not}, record, basis, func() MatchExample {
+		if basis == "message_text" {
+			return MatchExample{Matched: matched.found(strings.ToLower(record.Msg))}
+		}
+		in := text
+		if len(in) > exampleTextLimit {
+			in = strings.ToValidUTF8(in[:exampleTextLimit], "")
+		}
+		return MatchExample{Matched: matched.found(text), MatchedIn: in}
+	})
 }
 
-func (h *Health) count(template Signal, record Record, basis string) {
+// found is the pattern of the rule that the text contains: the first "any" pattern, or the first
+// "all" pattern for a rule constrained by "all" alone.
+func (r rule) found(text string) string {
+	for _, needles := range [][]string{r.any, r.all} {
+		for _, needle := range needles {
+			if strings.Contains(text, needle) {
+				return needle
+			}
+		}
+	}
+	return ""
+}
+
+// count adds one record to its signal. describe says what matched; it is only called for the first
+// line of each basis, which is all an example needs.
+func (h *Health) count(template Signal, record Record, basis string, describe func() MatchExample) {
 	signal := h.signals[template.Key]
 	if signal == nil {
 		template.First, template.Last = record.At, record.At
 		template.Sources = map[string]int{}
 		template.LogSeverities = map[string]int{}
 		template.MatchBasis = map[string]int{}
-		template.Example = record.Msg
 		signal = &template
 		h.signals[template.Key] = signal
+	}
+	if signal.MatchBasis[basis] == 0 {
+		example := describe()
+		example.Basis, example.At, example.Source, example.Message = basis, record.At, record.Source, record.Msg
+		signal.Examples = append(signal.Examples, example)
 	}
 	signal.Count++
 	signal.LogSeverities[record.Sev]++

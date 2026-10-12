@@ -79,6 +79,11 @@ type ingester struct {
 	seenContent map[string]string // content hash -> path of the first copy
 	seenFTDC    map[string]string // SHA-256 of contents -> path of the first copy
 	dupStreams  map[int64]bool
+	// sameFTDC links two FTDC directories that hold a copy of the same file: they are one
+	// diagnostic.data, an archive and its unpacked copy, and reading each file once spreads its
+	// files over both.
+	sameFTDC  map[string]string
+	ftdcDirOf map[string]string // path of a first copy -> its directory
 
 	blocks chan blockOut
 }
@@ -265,26 +270,29 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 
 	case source.FTDC:
 		hash := sha256.New()
-		path := e.OnDisk
+		path, partial := e.OnDisk, ""
 		if path == "" {
-			// Out of an archive: written to disk, because chunks are read by offset.
+			// Out of an archive: written to disk, because chunks are read by offset. It is written
+			// under a temporary name and only takes its own once it is complete and not a copy, so a
+			// half-written file or a duplicate never sits where a stream's files are kept.
 			sum := sha256.Sum256([]byte(e.Dir))
 			dir := filepath.Join(in.ftdcDir, hex.EncodeToString(sum[:])[:12])
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
 			path = filepath.Join(dir, e.Name)
-			f, err := os.Create(path)
+			f, err := os.CreateTemp(dir, ".partial-*")
 			if err != nil {
 				return err
 			}
+			partial = f.Name()
 			_, err = io.Copy(io.MultiWriter(f, hash), content)
-			closeErr := f.Close()
-			if err != nil {
-				return err
+			if closeErr := f.Close(); err == nil {
+				err = closeErr
 			}
-			if closeErr != nil {
-				return closeErr
+			if err != nil {
+				_ = os.Remove(partial)
+				return err
 			}
 		} else if _, err := io.Copy(hash, content); err != nil {
 			return err
@@ -293,10 +301,25 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 		key := hex.EncodeToString(hash.Sum(nil))
 		if earlier, copied := in.seenFTDC[key]; copied {
 			in.setNote(sourceID, "an exact copy of "+earlier+"; read once")
+			in.joinFTDC(e.Dir, in.ftdcDirOf[earlier])
 			in.mu.Unlock()
+			if partial != "" {
+				_ = os.Remove(partial)
+			}
 			return nil
 		}
+		if partial != "" {
+			if err := os.Rename(partial, path); err != nil {
+				in.mu.Unlock()
+				_ = os.Remove(partial)
+				return err
+			}
+		}
 		in.seenFTDC[key] = e.Path
+		if in.ftdcDirOf == nil {
+			in.ftdcDirOf = map[string]string{}
+		}
+		in.ftdcDirOf[e.Path] = e.Dir
 		group, ok := in.ftdc[e.Dir]
 		if !ok {
 			group = &ftdcGroup{Origin: e.Dir}
@@ -470,9 +493,35 @@ func (in *ingester) writeSilences(nodes []*nodeRow) error {
 	return nil
 }
 
+// joinFTDC records that two directories are one diagnostic.data. Called with mu held.
+func (in *ingester) joinFTDC(a, b string) {
+	a, b = in.ftdcRoot(a), in.ftdcRoot(b)
+	if a == b {
+		return
+	}
+	if b < a { // the first name in order stands for the set, so the result does not depend on read order
+		a, b = b, a
+	}
+	if in.sameFTDC == nil {
+		in.sameFTDC = map[string]string{}
+	}
+	in.sameFTDC[b] = a
+}
+
+func (in *ingester) ftdcRoot(dir string) string {
+	for {
+		up, ok := in.sameFTDC[dir]
+		if !ok {
+			return dir
+		}
+		dir = up
+	}
+}
+
 type ftdcRow struct {
 	Origin   string
 	Dir      string
+	Paths    []string // the files the stream is made of; a directory can also hold copies read once
 	Identity ftdc.Identity
 	First    int64
 	Last     int64
@@ -484,18 +533,29 @@ type ftdcRow struct {
 // indexFTDC opens each diagnostic data stream far enough to know its span and whose it is.
 func (in *ingester) indexFTDC() []ftdcRow {
 	var out []ftdcRow
-	keys := make([]string, 0, len(in.ftdc))
-	for key := range in.ftdc {
+	// Directories that share a file are one stream, named after the first of them.
+	groups := map[string]*ftdcGroup{}
+	for dir, group := range in.ftdc {
+		root := in.ftdcRoot(dir)
+		if groups[root] == nil {
+			groups[root] = &ftdcGroup{Origin: root}
+		}
+		groups[root].Files = append(groups[root].Files, group.Files...)
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		group := in.ftdc[key]
-		row := ftdcRow{Origin: group.Origin, Dir: filepath.Dir(group.Files[0])}
-		stream, err := ftdc.OpenFiles(row.Dir, group.Files)
+		group := groups[key]
+		paths := append([]string(nil), group.Files...)
+		sort.Strings(paths)
+		row := ftdcRow{Origin: group.Origin, Dir: filepath.Dir(paths[0]), Paths: paths}
+		stream, err := ftdc.OpenFiles(row.Dir, paths)
 		if err != nil {
 			row.Note = err.Error()
-			row.Files = len(group.Files)
+			row.Files = len(paths)
 			out = append(out, row)
 			continue
 		}

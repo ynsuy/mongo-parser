@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"mongo-log-parser/internal/ftdc"
+	"mongo-log-parser/internal/label"
 	"mongo-log-parser/internal/render"
 )
 
@@ -92,6 +93,21 @@ func replMemberOf(samples *ftdc.Samples, source string) (replMember, bool) {
 		return replMember{}, false
 	}
 	return replMember{Source: source, Spans: spans}, true
+}
+
+// peerOf is what a node is compared to other nodes as: its role and the replica set state it held
+// through the window, or label.PeerChanged when it held more than one. A node with no state flags
+// (a standalone, a mongos) is its role alone.
+func peerOf(role string, member replMember, known bool) string {
+	if !known {
+		return role
+	}
+	for _, span := range member.Spans[1:] {
+		if span.State != member.Spans[0].State {
+			return label.PeerChanged
+		}
+	}
+	return strings.TrimSpace(role + " " + member.Spans[0].State)
 }
 
 // sortMemberStates puts the primary first: it is what the question is usually about.

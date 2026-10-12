@@ -9,9 +9,7 @@ rules:
     doc: >-
       Share of the machine's memory not available to new allocations (MemTotal less MemAvailable, so
       the page cache the kernel can drop counts as free). Host-wide memory or CPU counters do not
-      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
-      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      establish a container's resource limit.
     versions: ["4.2.14-4.3", "4.4.5-"]
     signal:
       mode: gauge
@@ -33,9 +31,7 @@ rules:
     title: "Swap in use"
     doc: >-
       Share of swap holding pages. Host-wide memory or CPU counters do not establish a container's
-      resource limit. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      resource limit.
     signal:
       mode: gauge
       unit: "%"
@@ -54,10 +50,7 @@ rules:
   - name: memory.page_faults
     title: "Page faults"
     doc: >-
-      Rate of the process's logged major-page-fault counter. Minute summaries use a ratio of sums for
-      ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Rate of the process's logged major-page-fault counter.
     signal:
       mode: rate
       unit: "/s"
@@ -74,9 +67,7 @@ rules:
     title: "mongod resident memory"
     doc: >-
       mongod's resident memory as a share of the machine's. Host-wide memory or CPU counters do not
-      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
-      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      establish a container's resource limit.
     signal:
       mode: gauge
       unit: "%"
@@ -95,10 +86,7 @@ rules:
     title: "Allocated bytes minus WiredTiger cache bytes"
     doc: >-
       Difference between tcmalloc allocated bytes and bytes currently held in the WiredTiger cache;
-      this is a derived estimate, not a complete inventory of non-cache allocations. Minute summaries
-      use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are
-      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      this is a derived estimate, not a complete inventory of non-cache allocations.
     signal:
       mode: gauge
       unit: "GiB"
@@ -112,9 +100,7 @@ rules:
     title: "tcmalloc pageheap-free share"
     doc: >-
       Ratio of tcmalloc pageheap_free_bytes to heap_size; these counters do not describe every
-      allocator cache. Minute summaries use a ratio of sums for ratio signals and a mean otherwise.
-      Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a discovered
-      server limit. Paired labels are navigation links, not causal claims.
+      allocator cache.
     until: "8.0"
     signal:
       mode: gauge
@@ -133,10 +119,8 @@ rules:
   - name: memory.cache_of_ram
     title: "WiredTiger cache size against RAM"
     doc: >-
-      The configured cache as a share of the machine's memory. Host-wide memory or CPU counters do not
-      establish a container's resource limit. Minute summaries use a ratio of sums for ratio signals
-      and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a
-      diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      The configured cache as a share of the machine's memory. Host-wide memory or CPU counters do
+      not establish a container's resource limit.
     signal:
       mode: gauge
       unit: "%"

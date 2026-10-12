@@ -76,11 +76,10 @@ func runSlow(root string, args []string) error {
 	sampled := analyze.SampleShapes(analyze.ShapeFilter{
 		Namespace: *namespace, Operation: *operation, Plan: *plan, Hash: *queryHash,
 	}, *examples)
-	sinks := []analyze.Sink{queries}
 	if *examples > 0 {
-		sinks = append(sinks, sampled)
+		queries.Sample(sampled)
 	}
-	if err := analyze.Run(st, windowQuery(start, end), sinks...); err != nil {
+	if err := analyze.Run(st, windowQuery(start, end), queries); err != nil {
 		return err
 	}
 

@@ -8,10 +8,7 @@ rules:
     title: "Read latency"
     doc: >-
       Average milliseconds per read operation over each minute, from opLatencies: every microsecond
-      spent on reads in the minute over every read that finished in it. Minute summaries use a ratio
-      of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed
-      descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      spent on reads in the minute over every read that finished in it.
     signal:
       mode: rate
       unit: "ms"
@@ -26,15 +23,12 @@ rules:
       - {name: very_slow, up: [50, 100]}
     elevated: 50
     min_change: 5
-    pairs_with: [tickets.read.scarce, query.targeting, cache.over_trigger, disk.read_await]
+    pairs_with: [tickets.read.scarce, query.targeting, cache.fill_above_95, disk.read_await]
 
   - name: latency.writes
     title: "Write latency"
     doc: >-
-      Average milliseconds per write operation over each minute, from opLatencies. Minute summaries
-      use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and thresholds are
-      fixed descriptive references, not a diagnosis or a discovered server limit. Paired labels are
-      navigation links, not causal claims.
+      Average milliseconds per write operation over each minute, from opLatencies.
     signal:
       mode: rate
       unit: "ms"
@@ -45,15 +39,13 @@ rules:
     levels: *latency_levels
     elevated: 50
     min_change: 5
-    pairs_with: [tickets.write.scarce, cache.dirty_over_trigger, flow.throttled, repl.majority_lag]
+    pairs_with: [tickets.write.scarce, cache.dirty_above_20, flow.lagged, repl.majority_lag]
 
   - name: latency.commands
     title: "Command latency"
     doc: >-
       Ratio of command opLatencies counter advance to command operation-count advance, scaled to
-      milliseconds per operation. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      milliseconds per operation.
     signal:
       mode: rate
       unit: "ms"
@@ -69,10 +61,7 @@ rules:
   - name: ops.total
     title: "Operations a second"
     doc: >-
-      Sum of query, getMore, insert, update, delete and command operation-counter rates. Minute
-      summaries use a ratio of sums for ratio signals and a mean otherwise. Numeric bands and
-      thresholds are fixed descriptive references, not a diagnosis or a discovered server limit.
-      Paired labels are navigation links, not causal claims.
+      Sum of query, getMore, insert, update, delete and command operation-counter rates.
     signal:
       mode: rate
       unit: "ops/s"
@@ -84,10 +73,7 @@ rules:
   - name: ops.writes
     title: "Writes a second"
     doc: >-
-      Sum of insert, update and delete operation-counter rates. Minute summaries use a ratio of sums
-      for ratio signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive
-      references, not a diagnosis or a discovered server limit. Paired labels are navigation links,
-      not causal claims.
+      Sum of insert, update and delete operation-counter rates.
     signal:
       mode: rate
       unit: "ops/s"
@@ -99,9 +85,7 @@ rules:
     title: "Documents examined per document returned"
     doc: >-
       Ratio of documents-examined counter advance to documents-returned counter advance; it does not
-      determine index suitability. Minute summaries use a ratio of sums for ratio signals and a mean
-      otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis or a
-      discovered server limit. Paired labels are navigation links, not causal claims.
+      determine index suitability.
     signal:
       mode: rate
       unit: "ratio"
@@ -120,9 +104,7 @@ rules:
   - name: query.collscans
     title: "Collection scans"
     doc: >-
-      Rate of the server's collection-scan counter. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Rate of the server's collection-scan counter.
     since: "4.4"
     signal:
       mode: rate
@@ -136,12 +118,10 @@ rules:
     min_change: 0.5
     pairs_with: [query.targeting, cache.read_in]
 
-  - name: query.in_memory_sorts
+  - name: query.scan_and_order
     title: "scanAndOrder counter rate"
     doc: >-
-      Rate of the server's scanAndOrder counter. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Rate of the server's scanAndOrder counter.
     signal:
       mode: rate
       unit: "/s"
@@ -152,10 +132,8 @@ rules:
   - name: writes.conflicts
     title: "Write conflicts"
     doc: >-
-      Rate of the server's writeConflicts counter; retries, document identity and contention cause are
-      not inferred from this counter. Minute summaries use a ratio of sums for ratio signals and a
-      mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Rate of the server's writeConflicts counter; retries, document identity and contention cause
+      are not inferred from this counter.
     signal:
       mode: rate
       unit: "/s"
@@ -172,9 +150,7 @@ rules:
     title: "Documents deleted by TTL"
     doc: >-
       Rate of documents reported deleted by the TTL monitor; collection identity, expiry backlog and
-      latency impact are not inferred. Minute summaries use a ratio of sums for ratio signals and a
-      mean otherwise. Numeric bands and thresholds are fixed descriptive references, not a diagnosis
-      or a discovered server limit. Paired labels are navigation links, not causal claims.
+      latency impact are not inferred.
     signal:
       mode: rate
       unit: "docs/s"
@@ -185,9 +161,7 @@ rules:
   - name: cursors.open
     title: "Open cursors"
     doc: >-
-      Count reported for currently open cursors. Minute summaries use a ratio of sums for ratio
-      signals and a mean otherwise. Numeric bands and thresholds are fixed descriptive references, not
-      a diagnosis or a discovered server limit. Paired labels are navigation links, not causal claims.
+      Count reported for currently open cursors.
     signal:
       mode: gauge
       unit: "cursors"
