@@ -10,6 +10,7 @@ import { ParserRunner } from "../lib/parser-runner.js";
 import { selectPath, directory } from "../lib/data-path.js";
 import { pageBytes, pageHeader, parserResult, ResultPages, type ParserReport } from "../lib/tool-result.js";
 import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
+import { highlight } from "../lib/highlight.js";
 
 const runFile = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -159,6 +160,9 @@ function windowArgs(p: { from?: string; to?: string; around?: string; window?: s
 }
 
 export default function mongodb(pi: ExtensionAPI) {
+  // Numbers and dates in an answer get colours of their own; thinking and user text are left alone.
+  pi.registerMarkdownTransformer((markdown, context) => (context.messageType === "assistant" ? highlight(markdown) : markdown));
+
   pi.on("input", async (event, ctx) => {
     let text = event.text;
     try {

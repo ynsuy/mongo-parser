@@ -116,8 +116,8 @@ wording safeguards and unit tests are not end-to-end RCA validation.
 `mongo_metrics` takes several streams. Each is read over the same window and charted against the
 same value axis, because two nodes drawn to their own scales look alike however far apart their
 numbers are. The JSON identifies every stream, and a metric that appears has a row for every node.
-PIDBA answers use plain ASCII charts or tables from the structured values, with labelled units,
-UTC times, aggregation and gaps; node comparisons use a shared scale and a legend.
+PIDBA answers use bar charts in the parser's style, or tables, from the structured values, with
+labelled units, UTC times, aggregation and gaps; node comparisons use a shared scale, a strip per node.
 
 By default each stream gets its own chart under a shared axis. `overlay` puts them on one chart,
 which is the view for finding the moment two nodes stopped agreeing. Where lines cross, the one
@@ -161,7 +161,7 @@ their scope; paging preserves all returned JSON, not every raw record in the bun
 
 Parser tool calls run sequentially to protect the shared cache during its first ingest. Tool errors
 show the parser's actual diagnostic instead of only `failed`. RCA answers use numbered short paragraphs that combine observations and interpretation,
-with one overall assessment at the bottom. Relevant metric changes can have a compact ASCII chart
+with one overall assessment at the bottom. A finding about a label that changed gets a bar chart
 beneath the paragraph; tables appear on request. `mongo_label` with `chart:true` returns the exact
 derived `signal_series` for these charts. Writing follows
 short sentences and plain words, adapted from [SimpleEnglish](https://github.com/AminBlg/SimpleEnglish),

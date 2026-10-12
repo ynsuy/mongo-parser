@@ -299,6 +299,30 @@ func bucketOf(value float64) int {
 	return min(max(bucket, 0), histogramBuckets-1)
 }
 
+// MarshalJSON writes the mean and the approximate median and p95 (histogram buckets, about ±12%) beside the exact count, sum, min
+// and max, so a reader of the JSON is not left to divide a total by a count.
+func (n Numbers) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Count int     `json:"count"`
+		Sum   float64 `json:"sum"`
+		Min   float64 `json:"min"`
+		Avg   float64 `json:"avg"`
+		P50   float64 `json:"p50_approx"`
+		P95   float64 `json:"p95_approx"`
+		Max   float64 `json:"max"`
+	}{n.Count, n.Sum, n.Min, round3(n.Avg()), round3(n.Quantile(0.5)), round3(n.Quantile(0.95)), n.Max})
+}
+
+// round3 keeps three significant digits: the quantiles are histogram bucket edges, and more digits
+// than that claim a precision they do not have.
+func round3(v float64) float64 {
+	if v == 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return v
+	}
+	scale := math.Pow(10, 2-math.Floor(math.Log10(math.Abs(v))))
+	return math.Round(v*scale) / scale
+}
+
 // Avg is the mean of the values seen.
 func (n Numbers) Avg() float64 {
 	if n.Count == 0 {

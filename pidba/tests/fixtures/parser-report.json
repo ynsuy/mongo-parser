@@ -5520,57 +5520,81 @@
           "millis": 2600
         },
         "bytes_read": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "count": 1,
         "cpu_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "docs_examined": {
+          "avg": 1,
           "count": 1,
           "max": 1,
           "min": 1,
+          "p50_approx": 1,
+          "p95_approx": 1,
           "sum": 1
         },
         "duration_ms": {
+          "avg": 2600,
           "count": 1,
           "max": 2600,
           "min": 2600,
+          "p50_approx": 2600,
+          "p95_approx": 2600,
           "sum": 2600
         },
         "failed": 0,
         "failed_ms": 0,
         "first_at": "2026-05-06T07:22:00Z",
         "flow_control_wait_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "grouped_by": "namespace",
         "keys_examined": {
+          "avg": 1,
           "count": 1,
           "max": 1,
           "min": 1,
+          "p50_approx": 1,
+          "p95_approx": 1,
           "sum": 1
         },
         "last_at": "2026-05-06T07:22:00Z",
         "lock_acquire_waits": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "lock_wait_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "next": "mongo-log-parser slow /bundle --ns shop.orders --op update --plan IDHACK",
@@ -5578,15 +5602,21 @@
         "operation": "update",
         "plan": "IDHACK",
         "queue_wait_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "remote_wait_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "shape_id": "",
@@ -5606,15 +5636,21 @@
           }
         ],
         "storage_wait_ms": {
+          "avg": 0,
           "count": 1,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "write_concern_wait_ms": {
+          "avg": 2550,
           "count": 1,
           "max": 2550,
           "min": 2550,
+          "p50_approx": 2550,
+          "p95_approx": 2550,
           "sum": 2550
         }
       },
@@ -5627,51 +5663,72 @@
           "millis": 1100
         },
         "bytes_read": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "count": 3,
         "cpu_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "docs_examined": {
+          "avg": 50000,
           "count": 3,
           "max": 50000,
           "min": 50000,
+          "p50_approx": 50000,
+          "p95_approx": 50000,
           "sum": 150000
         },
         "duration_ms": {
+          "avg": 700,
           "count": 3,
           "max": 1000,
           "min": 400,
+          "p50_approx": 631,
+          "p95_approx": 1000,
           "sum": 2100
         },
         "failed": 0,
         "failed_ms": 0,
         "first_at": "2026-05-06T07:21:00Z",
         "flow_control_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "grouped_by": "queryHash",
         "last_at": "2026-05-06T07:22:00Z",
         "lock_acquire_waits": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "lock_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "next": "mongo-log-parser slow /bundle --query-hash 0A1B2C3D",
@@ -5680,21 +5737,30 @@
         "plan": "COLLSCAN",
         "query_hash": "0A1B2C3D",
         "queue_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "remote_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "returned": {
+          "avg": 1,
           "count": 3,
           "max": 1,
           "min": 1,
+          "p50_approx": 1,
+          "p95_approx": 1,
           "sum": 3
         },
         "shape_id": "0A1B2C3D",
@@ -5702,15 +5768,21 @@
           "node-a": 3
         },
         "storage_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         },
         "write_concern_wait_ms": {
+          "avg": 0,
           "count": 3,
           "max": 0,
           "min": 0,
+          "p50_approx": 0,
+          "p95_approx": 0,
           "sum": 0
         }
       }

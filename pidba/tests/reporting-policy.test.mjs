@@ -34,10 +34,10 @@ test("timing and reference labels are not preset diagnoses or remediation", () =
   ]) assert.ok(!prompt.includes(oldClaim), `Preset cause returned: ${oldClaim}`);
 });
 
-test("visual reporting uses structured ASCII values and preserves evidence scope", () => {
+test("visual reporting uses structured values in bar charts and preserves evidence scope", () => {
   const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
   for (const text of [prompt, skill]) {
-    for (const requirement of ["plain ASCII charts", "do not use ANSI colors",
+    for (const requirement of ["bar charts in fenced code blocks", "▁▂▃▄▅▆▇█", "do not use ANSI colors",
       "never interpolate gaps or invent points", "shared time window and value scale",
       "low=true", "exact relevant values", "`notes`", "retrieve required pages again"])
       assert.ok(text.includes(requirement), `Missing visual requirement: ${requirement}`);
@@ -49,12 +49,15 @@ test("visual reporting uses structured ASCII values and preserves evidence scope
 test("numbered RCA paragraphs combine interpretation and use exact label signal charts", () => {
   const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
   for (const text of [prompt, skill]) {
-    for (const requirement of ["numbered short paragraphs", "Genel değerlendirme:", "Do not add separate",
+    for (const requirement of ["numbered short paragraphs", "the overall-assessment label\nincluded", "is not a reason to switch languages", "Do not add separate",
       "rather than dropping findings", "Use tables only when the user asks", "directly beneath", "signal_series", "chart:true",
-      "at most 25 words", "Keep exact metric IDs", "mark\nhypotheses as hypotheses",
+      "at most 25 words", "Keep exact metric IDs", "408 s", "node names in full", "gather the rest in the overall assessment", "not by its total alone", "p95_approx",
+      "gets a bar chart directly beneath", "mark\nhypotheses as hypotheses",
       "A tool failure is not an empty result"])
       assert.ok(text.includes(requirement), `Missing answer requirement: ${requirement}`);
     assert.ok(!text.includes("3-6 flat bullets"));
+    assert.ok(!text.includes("Keep charts selective"), "optional charts are skipped");
+    assert.ok(!text.includes("Genel değerlendirme:"), "a fixed Turkish label is copied into English answers");
     assert.ok(!text.includes("put it in a\ncompact table"));
   }
 });
