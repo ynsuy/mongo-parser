@@ -452,8 +452,18 @@ type reportShape struct {
 	Timeline      analyze.Timeline `json:"timeline,omitempty"` // left out: slow --query-hash gives it
 	ActiveMinutes int              `json:"active_minutes"`
 	BusiestMinute *busiestMinute   `json:"busiest_minute,omitempty"`
+	// SpentOn is where this shape's time went, largest first: the same breakdown slow prints for one
+	// shape, without the commands and wording that repeat on every row.
+	SpentOn []spent `json:"spent_on,omitempty"`
 	// Next is the command that gives this shape's every minute.
 	Next string `json:"next,omitempty"`
+}
+
+// spent is one thing a shape's time went on.
+type spent struct {
+	Name   string  `json:"name"`
+	Millis float64 `json:"millis"`
+	Share  float64 `json:"share"`
 }
 
 // busiestMinute is the minute a shape cost the most server time in.
@@ -474,6 +484,9 @@ func reportShapes(shapes []analyze.Shape, root string) []reportShape {
 				worst = at
 				r.BusiestMinute = &busiestMinute{At: time.Unix(at, 0).UTC(), Count: bin.Count, Millis: bin.Millis, MaxMs: bin.Max}
 			}
+		}
+		for _, wait := range shape.Waits() {
+			r.SpentOn = append(r.SpentOn, spent{Name: wait.Name, Millis: wait.Millis, Share: wait.Share})
 		}
 		r.Next = slowCommand(root, shape)
 		out[i] = r

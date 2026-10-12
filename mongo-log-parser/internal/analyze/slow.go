@@ -12,18 +12,21 @@ import (
 // slowAttributes are the fields MongoDB writes on a "Slow query" line that say what the operation
 // cost. Decoding this typed shape is far cheaper than decoding every attribute into a map.
 type slowAttributes struct {
-	Type              string          `json:"type"`
-	Namespace         string          `json:"ns"`
-	QueryHash         string          `json:"queryHash"`
-	PlanCacheShape    string          `json:"planCacheShapeHash"`
-	PlanSummary       string          `json:"planSummary"`
-	DurationMillis    float64         `json:"durationMillis"`
-	KeysExamined      float64         `json:"keysExamined"`
-	DocsExamined      float64         `json:"docsExamined"`
-	NReturned         float64         `json:"nreturned"`
+	Type           string  `json:"type"`
+	Namespace      string  `json:"ns"`
+	QueryHash      string  `json:"queryHash"`
+	PlanCacheShape string  `json:"planCacheShapeHash"`
+	PlanSummary    string  `json:"planSummary"`
+	DurationMillis float64 `json:"durationMillis"`
+	// Not every slow line carries these: the command envelope of a write logs none of them, and a
+	// field that was not written is unknown, not zero. A count of zero documents examined that the
+	// server never reported reads as a perfect index.
+	KeysExamined      *float64        `json:"keysExamined"`
+	DocsExamined      *float64        `json:"docsExamined"`
+	NReturned         *float64        `json:"nreturned"`
 	ResponseLength    float64         `json:"reslen"`
 	NumYields         float64         `json:"numYields"`
-	PlanningTimeMicro float64         `json:"planningTimeMicros"`
+	PlanningTimeMicro *float64        `json:"planningTimeMicros"`
 	CPUNanos          float64         `json:"cpuNanos"`
 	AppName           string          `json:"appName"`
 	Command           json.RawMessage `json:"command"`
@@ -89,12 +92,14 @@ type Shape struct {
 	First     time.Time `json:"first_at,omitzero"`
 	Last      time.Time `json:"last_at,omitzero"`
 
+	// Keys, Docs, Returned and Planning count only the executions whose line carried the field, so
+	// their count can be below the shape's; one that no line carried is left out of the JSON.
 	Duration  Numbers `json:"duration_ms"`
-	Keys      Numbers `json:"keys_examined"`
-	Docs      Numbers `json:"docs_examined"`
-	Returned  Numbers `json:"returned"`
+	Keys      Numbers `json:"keys_examined,omitzero"`
+	Docs      Numbers `json:"docs_examined,omitzero"`
+	Returned  Numbers `json:"returned,omitzero"`
 	BytesRead Numbers `json:"bytes_read"`
-	Planning  Numbers `json:"planning_micros"`
+	Planning  Numbers `json:"planning_micros,omitzero"`
 
 	// The waits, all in milliseconds so they can be read against Duration. An operation that is
 	// slow because it waited and one that is slow because it did work print identically without
@@ -136,7 +141,7 @@ type Shape struct {
 // like an index problem and is not. Nothing can be read off a write's nreturned, and saying so is
 // better than inventing a number from it.
 func (s Shape) Inefficiency() float64 {
-	if !s.Reads() {
+	if !s.Reads() || s.Docs.Count == 0 || s.Returned.Count == 0 {
 		return 0
 	}
 	return s.Docs.Sum / (s.Returned.Sum + 1)
@@ -262,6 +267,17 @@ type Numbers struct {
 // histogramBuckets covers 1 to ~10^7 in tenth-of-a-decade steps, which is enough resolution for
 // a latency percentile and costs a fixed 70 counters per value.
 const histogramBuckets = 70
+
+// IsZero reports whether nothing was counted, so a measure no line carried is left out of the JSON
+// rather than written as a measured zero.
+func (n Numbers) IsZero() bool { return n.Count == 0 }
+
+// addLogged counts a value the line may not have carried.
+func (n *Numbers) addLogged(value *float64) {
+	if value != nil {
+		n.add(*value)
+	}
+}
 
 func (n *Numbers) add(value float64) {
 	if n.Count == 0 || value < n.Min {
@@ -433,14 +449,20 @@ func wrapped(statement, envelope slowAttributes) slowAttributes {
 		merged.PlanCacheShape = statement.PlanCacheShape
 	}
 	for _, field := range []struct{ into, from *float64 }{
+		{&merged.Storage.Data.BytesRead, &statement.Storage.Data.BytesRead},
+		{&merged.Storage.Data.TimeReadingMicros, &statement.Storage.Data.TimeReadingMicros},
+	} {
+		if *field.into == 0 {
+			*field.into = *field.from
+		}
+	}
+	for _, field := range []struct{ into, from **float64 }{
 		{&merged.KeysExamined, &statement.KeysExamined},
 		{&merged.DocsExamined, &statement.DocsExamined},
 		{&merged.NReturned, &statement.NReturned},
-		{&merged.Storage.Data.BytesRead, &statement.Storage.Data.BytesRead},
-		{&merged.Storage.Data.TimeReadingMicros, &statement.Storage.Data.TimeReadingMicros},
 		{&merged.PlanningTimeMicro, &statement.PlanningTimeMicro},
 	} {
-		if *field.into == 0 {
+		if *field.into == nil || (**field.into == 0 && *field.from != nil) {
 			*field.into = *field.from
 		}
 	}
@@ -489,11 +511,11 @@ func (s *SlowQueries) count(record Record, attributes slowAttributes) {
 		shape.Last = record.At
 	}
 	shape.Duration.add(attributes.DurationMillis)
-	shape.Keys.add(attributes.KeysExamined)
-	shape.Docs.add(attributes.DocsExamined)
-	shape.Returned.add(attributes.NReturned)
+	shape.Keys.addLogged(attributes.KeysExamined)
+	shape.Docs.addLogged(attributes.DocsExamined)
+	shape.Returned.addLogged(attributes.NReturned)
 	shape.BytesRead.add(attributes.Storage.Data.BytesRead)
-	shape.Planning.add(attributes.PlanningTimeMicro)
+	shape.Planning.addLogged(attributes.PlanningTimeMicro)
 
 	lockWait, lockWaits := 0.0, 0.0
 	for _, lock := range attributes.Locks {
@@ -554,6 +576,10 @@ func (s Shape) Waits() []Wait {
 			Meaning: "sum of logged storage data timeReadingMicros and timeWaitingMicros, converted to milliseconds"},
 		{Name: "remote shards", Millis: s.RemoteWait.Sum, Next: "slow on the shard's own logs",
 			Meaning: "sum of logged remoteOpWaitMillis; no shard identity inferred"},
+		// Planning is work rather than waiting, but it is a stretch of the operation's own time the
+		// server measured, and left out it was counted as unaccounted.
+		{Name: "planning", Millis: s.Planning.Sum / 1000, Next: "-",
+			Meaning: "sum of logged planningTimeMicros, converted to milliseconds"},
 		{Name: "cpu", Millis: s.CPU.Sum, Next: "-",
 			Meaning: "sum of logged cpuNanos, converted to milliseconds"},
 	}

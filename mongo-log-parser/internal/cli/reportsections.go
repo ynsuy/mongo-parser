@@ -28,15 +28,12 @@ func renderShapes(shapes []analyze.Shape, queries *analyze.SlowQueries, limit in
 		{Title: "Total ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.TotalTime()) })},
 		{Title: "Avg ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Duration.Avg()) })},
 		{Title: "P95 ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Duration.Quantile(0.95)) }), Drop: 3},
-		{Title: "Docs", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Docs.Avg()) }), Drop: 2},
-		{Title: "Ineff", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string {
-			if !s.Reads() {
-				return "-"
-			}
-			return render.Compact(s.Inefficiency())
-		}), Drop: 1},
+		{Title: "Keys", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Keys) }), Drop: 2},
+		{Title: "Docs", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Docs) }), Drop: 4},
+		{Title: "Ret", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Returned) }), Drop: 3},
+		{Title: "Ineff", Align: render.AlignRight, Values: field(shown, inefficiency), Drop: 1},
 		{Title: "Outcome", Values: field(shown, func(s analyze.Shape) string { return s.Outcome() })},
-		{Title: "Waited on", Values: field(shown, dominantWait), Drop: 4},
+		{Title: "Spent on", Values: field(shown, spentOn), Drop: 5},
 		{Title: "Query hash", Values: field(shown, func(s analyze.Shape) string { return s.Label() })},
 	}, options)
 	total, waits := queries.WaitTotals()

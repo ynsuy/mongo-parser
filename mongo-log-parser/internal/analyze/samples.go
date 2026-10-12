@@ -21,10 +21,10 @@ type Execution struct {
 	Plan      string    `json:"plan"`
 	Millis    float64   `json:"duration_ms"`
 
-	Docs     float64 `json:"docs_examined"`
-	Keys     float64 `json:"keys_examined"`
-	Returned float64 `json:"returned"`
-	Yields   float64 `json:"num_yields"`
+	Docs     *float64 `json:"docs_examined,omitempty"` // nil when the line did not carry it
+	Keys     *float64 `json:"keys_examined,omitempty"`
+	Returned *float64 `json:"returned,omitempty"`
+	Yields   float64  `json:"num_yields"`
 
 	// Waits are the same names the breakdown uses, so one execution can be read against the
 	// distribution above it without translating anything.
@@ -156,6 +156,9 @@ func executionOf(record Record, attributes slowAttributes, namespace, operation,
 		"storage read":  (attributes.Storage.Data.TimeReadingMicros + attributes.Storage.Data.TimeWaitingMicros) / 1000,
 		"remote shards": attributes.RemoteOpWaitMillis,
 		"cpu":           attributes.CPUNanos / 1e6,
+	}
+	if attributes.PlanningTimeMicro != nil {
+		waits["planning"] = *attributes.PlanningTimeMicro / 1000
 	}
 	for name, value := range waits {
 		if value <= 0 {

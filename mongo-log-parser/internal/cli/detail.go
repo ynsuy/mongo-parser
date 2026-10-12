@@ -93,9 +93,10 @@ func distribution(shape analyze.Shape, options render.TableOptions) string {
 		{name: "cpu ms", numbers: shape.CPU},
 	}
 	kept := make([]measure, 0, len(measures))
-	empty, negligible := make([]string, 0, 4), make([]string, 0, 4)
+	empty, negligible, unlogged := make([]string, 0, 4), make([]string, 0, 4), make([]string, 0, 4)
 	for _, entry := range measures {
 		if entry.numbers.Count == 0 {
+			unlogged = append(unlogged, shortName(entry.name))
 			continue
 		}
 		// A row of zeros is not a measurement and reading eight of them to find the two that matter
@@ -148,6 +149,9 @@ func distribution(shape analyze.Shape, options render.TableOptions) string {
 	}
 	if len(negligible) > 0 {
 		notes = append(notes, "under a thousandth of the time, so not shown: "+strings.Join(negligible, ", "))
+	}
+	if len(unlogged) > 0 {
+		notes = append(notes, "in none of its lines, so unknown rather than zero: "+strings.Join(unlogged, ", "))
 	}
 	return strings.Join(notes, "\n")
 }

@@ -30,10 +30,10 @@ func renderExecutions(executions []analyze.Execution, options render.TableOption
 		{Title: "When", Values: text(func(e analyze.Execution) string { return e.At.Format("01-02 15:04:05") })},
 		{Title: "Node", Align: render.AlignTail, Values: text(func(e analyze.Execution) string { return e.Source }), Drop: 3},
 		{Title: "ms", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return render.Compact(e.Millis) })},
-		{Title: "Waited on", Values: text(waitSummary), Drop: 1},
-		{Title: "Docs", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return render.Compact(e.Docs) }), Drop: 4},
-		{Title: "Keys", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return render.Compact(e.Keys) }), Drop: 5},
-		{Title: "Ret", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return render.Compact(e.Returned) }), Drop: 6},
+		{Title: "Spent on", Values: text(waitSummary), Drop: 1},
+		{Title: "Docs", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Docs) }), Drop: 4},
+		{Title: "Keys", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Keys) }), Drop: 5},
+		{Title: "Ret", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Returned) }), Drop: 6},
 		{Title: "App", Values: text(func(e analyze.Execution) string { return orDash(e.AppName) }), Drop: 2},
 	}, options)
 
@@ -56,7 +56,7 @@ func renderExecutions(executions []analyze.Execution, options render.TableOption
 // as a finding and is the opposite of one.
 const notableWait = 0.01
 
-// waitSummary is what one execution spent its time on, for a column.
+// waitSummary is the two largest things one execution spent its time on, for a column.
 func waitSummary(execution analyze.Execution) string {
 	names := make([]string, 0, len(execution.Waits))
 	for name := range execution.Waits {
@@ -69,8 +69,19 @@ func waitSummary(execution analyze.Execution) string {
 		return "-"
 	}
 	sort.Slice(names, func(i, j int) bool { return execution.Waits[names[i]] > execution.Waits[names[j]] })
-	top := names[0]
-	return fmt.Sprintf("%s %.0f%%", top, 100*execution.Waits[top]/execution.Millis)
+	parts := make([]string, 0, 2)
+	for _, name := range names[:min(2, len(names))] {
+		parts = append(parts, fmt.Sprintf("%s %.0f%%", name, 100*execution.Waits[name]/execution.Millis))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// loggedValue is a value the line may not have carried: "-" when it did not.
+func loggedValue(value *float64) string {
+	if value == nil {
+		return "-"
+	}
+	return render.Compact(*value)
 }
 
 // commandEnvelope are the fields every command carries and nobody reads: session ids, cluster

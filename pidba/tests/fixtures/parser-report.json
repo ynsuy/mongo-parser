@@ -5576,12 +5576,6 @@
         "ns": "shop.orders",
         "operation": "update",
         "plan": "IDHACK",
-        "planning_micros": {
-          "count": 1,
-          "max": 0,
-          "min": 0,
-          "sum": 0
-        },
         "queue_wait_ms": {
           "count": 1,
           "max": 0,
@@ -5594,16 +5588,22 @@
           "min": 0,
           "sum": 0
         },
-        "returned": {
-          "count": 1,
-          "max": 0,
-          "min": 0,
-          "sum": 0
-        },
         "shape_id": "",
         "sources": {
           "node-a": 1
         },
+        "spent_on": [
+          {
+            "millis": 2550,
+            "name": "write concern",
+            "share": 0.9807692307692307
+          },
+          {
+            "millis": 50,
+            "name": "unaccounted",
+            "share": 0.019230769230769232
+          }
+        ],
         "storage_wait_ms": {
           "count": 1,
           "max": 0,
@@ -5660,12 +5660,6 @@
           "sum": 0
         },
         "grouped_by": "queryHash",
-        "keys_examined": {
-          "count": 3,
-          "max": 0,
-          "min": 0,
-          "sum": 0
-        },
         "last_at": "2026-05-06T07:22:00Z",
         "lock_acquire_waits": {
           "count": 3,
@@ -5683,12 +5677,6 @@
         "ns": "shop.items",
         "operation": "find",
         "plan": "COLLSCAN",
-        "planning_micros": {
-          "count": 3,
-          "max": 0,
-          "min": 0,
-          "sum": 0
-        },
         "query_hash": "0A1B2C3D",
         "queue_wait_ms": {
           "count": 3,

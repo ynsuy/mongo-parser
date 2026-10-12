@@ -336,3 +336,33 @@ func TestSampledWritesAreThePairedExecution(t *testing.T) {
 		})
 	}
 }
+
+// A command envelope logs no keysExamined, docsExamined or nreturned. Counted as zeros they read as
+// a write that touched nothing; they are unknown, and the measure counts only the lines that said.
+func TestUnloggedCountsAreUnknownNotZero(t *testing.T) {
+	s := NewSlowQueries()
+	s.Add(rec("Slow query", `{"type":"command","ns":"app.$cmd","command":{"update":"orders"},"durationMillis":200}`))
+	s.Add(rec("Slow query", `{"type":"command","ns":"app.$cmd","command":{"update":"orders"},"durationMillis":300}`))
+	shape := s.Shapes()[0]
+	if shape.Count != 2 || shape.Docs.Count != 0 || shape.Keys.Count != 0 || shape.Returned.Count != 0 || shape.Planning.Count != 0 {
+		t.Fatalf("unlogged counts were counted: %+v", shape)
+	}
+	s = NewSlowQueries()
+	s.Add(rec("Slow query", `{"ns":"app.items","command":{"find":"items"},"durationMillis":100,"keysExamined":0,"docsExamined":40,"nreturned":0}`))
+	s.Add(rec("Slow query", `{"ns":"app.items","command":{"find":"items"},"durationMillis":100}`))
+	shape = s.Shapes()[0]
+	if shape.Keys.Count != 1 || shape.Keys.Sum != 0 || shape.Docs.Count != 1 || shape.Docs.Sum != 40 {
+		t.Fatalf("a logged zero is a measurement and an absent field is not: %+v", shape)
+	}
+}
+
+// Planning is time the server measured inside the operation; left out of the breakdown it was
+// counted as unaccounted.
+func TestPlanningIsWhereTimeWent(t *testing.T) {
+	s := NewSlowQueries()
+	s.Add(rec("Slow query", `{"ns":"app.items","command":{"find":"items"},"durationMillis":100,"planningTimeMicros":60000}`))
+	waits := s.Shapes()[0].Waits()
+	if len(waits) != 2 || waits[0].Name != "planning" || waits[0].Millis != 60 || waits[1].Name != "unaccounted" || waits[1].Millis != 40 {
+		t.Fatalf("planning not named: %+v", waits)
+	}
+}

@@ -364,6 +364,43 @@ func renderWaits(total float64, waits []analyze.Wait, options render.TableOption
 // it is worth a table.
 const minAccountedShare = 0.05
 
+// loggedAvg is a measure's mean over the executions whose line carried it, or "-" when none did.
+func loggedAvg(n analyze.Numbers) string {
+	if n.Count == 0 {
+		return "-"
+	}
+	return render.Compact(n.Avg())
+}
+
+// inefficiency is documents examined per document returned, for a column: "-" for a write, whose
+// nreturned means nothing, and for a shape no line of which carried the two counts.
+func inefficiency(s analyze.Shape) string {
+	if !s.Reads() || s.Docs.Count == 0 || s.Returned.Count == 0 {
+		return "-"
+	}
+	return render.Compact(s.Inefficiency())
+}
+
+// spentOn is the two largest things a shape's time went on, each with its share of the duration,
+// for a column. The unaccounted remainder is named like the rest: a shape that spent nine tenths of
+// its time on nothing the server measured is not one that mostly waited for its storage reads.
+func spentOn(shape analyze.Shape) string {
+	parts := make([]string, 0, 2)
+	for _, wait := range shape.Waits() {
+		if wait.Share < 0.005 { // rounds to 0%, and a column of "cpu 0%" says nothing
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %.0f%%", wait.Name, wait.Share*100))
+		if len(parts) == 2 {
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ", ")
+}
+
 // dominantWait is the one thing a shape mostly waited for, short enough for a table column. Work is
 // not a wait, so a shape that spent its time on the CPU says so rather than naming a runner-up.
 func dominantWait(shape analyze.Shape) string {
