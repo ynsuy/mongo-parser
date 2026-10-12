@@ -177,6 +177,33 @@ func TestWindowSelectsChunks(t *testing.T) {
 	}
 }
 
+// A file ends at its last sample, not where its last chunk began: a chunk holds up to five minutes,
+// and a span cut at the chunk's start says the node went quiet for them. The cached index says the
+// same as a fresh one.
+func TestAFileEndsAtItsLastSample(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	build := func(at time.Time, i int) bson.D {
+		return bson.D{{Key: "start", Value: at}, {Key: "serverStatus", Value: bson.D{
+			{Key: "start", Value: at}, {Key: "a", Value: int64(i)}}}}
+	}
+	file := append(chunkBytes(t, start, 10, build), chunkBytes(t, start.Add(5*time.Minute), 300, build)...)
+	path := filepath.Join(t.TempDir(), "metrics.span")
+	if err := os.WriteFile(path, file, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := start.Add(5*time.Minute + 299*time.Second)
+	for _, read := range []string{"indexed", "cached"} {
+		indexed, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first, last := indexed.Span(); !first.Equal(start) || !last.Equal(want) {
+			t.Errorf("%s: span %s to %s, want %s to %s", read, first, last, start, want)
+		}
+	}
+}
+
 // A selector keeps the decode from materializing thousands of columns nobody asked about.
 func TestSelectorKeepsOnlyRequestedMetrics(t *testing.T) {
 	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)

@@ -17,14 +17,16 @@ type cachedIndex struct {
 	Size    int64       `json:"size"`
 	ModTime time.Time   `json:"mod_time"`
 	Chunks  []ChunkInfo `json:"chunks"`
+	Last    time.Time   `json:"last"`
 }
 
 // indexVersion changes whenever the way a file is indexed changes. The cache is keyed on the file,
 // and a file that has not changed is still indexed differently by a decoder that has: version 1
 // accepted any document with a plausible length, took a corrupt one at the end of a damaged capture
 // for a chunk, and cached the file as whole. Every index written by it is refused and rebuilt, so the
-// damage it missed is found and reported rather than remembered as clean.
-const indexVersion = 2
+// damage it missed is found and reported rather than remembered as clean. Version 2 did not know
+// when a file's last sample was taken.
+const indexVersion = 3
 
 func cacheDir() string {
 	base := os.Getenv("XDG_CACHE_HOME")
@@ -47,8 +49,8 @@ func cachePath(path string) string {
 	return filepath.Join(dir, hex.EncodeToString(sum[:16])+".json")
 }
 
-// loadIndex returns the cached chunk index when it still describes the file on disk.
-func loadIndex(path string, info os.FileInfo) []ChunkInfo {
+// loadIndex returns the cached index when it still describes the file on disk.
+func loadIndex(path string, info os.FileInfo) *cachedIndex {
 	name := cachePath(path)
 	if name == "" {
 		return nil
@@ -64,11 +66,11 @@ func loadIndex(path string, info os.FileInfo) []ChunkInfo {
 	if cached.Version != indexVersion || cached.Path != path || cached.Size != info.Size() || !cached.ModTime.Equal(info.ModTime()) {
 		return nil
 	}
-	return cached.Chunks
+	return &cached
 }
 
 // saveIndex stores an index. A cache write is never worth failing a command over.
-func saveIndex(path string, info os.FileInfo, chunks []ChunkInfo) {
+func saveIndex(path string, info os.FileInfo, chunks []ChunkInfo, last time.Time) {
 	name := cachePath(path)
 	if name == "" {
 		return
@@ -76,7 +78,7 @@ func saveIndex(path string, info os.FileInfo, chunks []ChunkInfo) {
 	if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
 		return
 	}
-	data, err := json.Marshal(cachedIndex{Version: indexVersion, Path: path, Size: info.Size(), ModTime: info.ModTime(), Chunks: chunks})
+	data, err := json.Marshal(cachedIndex{Version: indexVersion, Path: path, Size: info.Size(), ModTime: info.ModTime(), Chunks: chunks, Last: last})
 	if err != nil {
 		return
 	}

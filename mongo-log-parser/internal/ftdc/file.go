@@ -26,6 +26,7 @@ type File struct {
 	Path   string
 	Cut    string // set when the file ends in the middle of a document: what was indexed, and what was lost
 	chunks []ChunkInfo
+	last   time.Time // when its last sample was taken
 }
 
 // Open indexes a file, reusing the on-disk index while the file is unchanged. Building an index
@@ -35,8 +36,8 @@ func Open(path string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if chunks := loadIndex(path, info); len(chunks) > 0 {
-		return &File{Path: path, chunks: chunks}, nil
+	if cached := loadIndex(path, info); cached != nil && len(cached.Chunks) > 0 {
+		return &File{Path: path, chunks: cached.Chunks, last: cached.Last}, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -103,6 +104,7 @@ func Open(path string) (*File, error) {
 		}
 		return nil, fmt.Errorf("%s: no FTDC chunks", path)
 	}
+	file.last = file.lastSample()
 	if len(damage) > 0 {
 		// Not cached: the index on disk holds chunks and not damage, and a file that is damaged
 		// should say so every time it is read rather than only the first.
@@ -113,8 +115,20 @@ func Open(path string) (*File, error) {
 		file.Cut = summary + "; " + strings.Join(damage, "; ")
 		return file, nil
 	}
-	saveIndex(path, info, file.chunks)
+	saveIndex(path, info, file.chunks, file.last)
 	return file, nil
+}
+
+// lastSample is when the file's last sample was taken. The index knows when each chunk began, and
+// a chunk can hold five minutes of samples, so the last chunk is decoded for the time it ended.
+// A last chunk that cannot be decoded ends, as far as anyone can tell, where it began.
+func (f *File) lastSample() time.Time {
+	i := len(f.chunks) - 1
+	samples, err := decodeRefs([]chunkRef{{f, i, f.chunks[i].Start}}, func(string) bool { return false }, nil)
+	if err != nil || len(samples.Timestamps) == 0 {
+		return f.chunks[i].Start
+	}
+	return time.UnixMilli(samples.Timestamps[len(samples.Timestamps)-1]).UTC()
 }
 
 // minDocument is the smallest FTDC envelope worth recognising when resynchronising: an _id, a type
@@ -169,9 +183,13 @@ func resume(data []byte, from int) (int, bool) {
 // Chunks reports the index, oldest first.
 func (f *File) Chunks() []ChunkInfo { return f.chunks }
 
-// Span is the time range the file covers, bounded by its first and last chunk start.
+// Span is the time range the file covers, from its first sample to its last.
 func (f *File) Span() (first, last time.Time) {
-	return f.chunks[0].Start, f.chunks[len(f.chunks)-1].Start
+	last = f.last
+	if last.IsZero() {
+		last = f.chunks[len(f.chunks)-1].Start
+	}
+	return f.chunks[0].Start, last
 }
 
 // Read decodes the chunks overlapping [from, to] and keeps the metrics the selector accepts.
