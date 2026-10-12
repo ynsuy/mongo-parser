@@ -46,11 +46,15 @@ test("visual reporting uses structured ASCII values and preserves evidence scope
   }
 });
 
-test("short answers keep the complete evidence inventory and explain failures", () => {
+test("numbered RCA findings separate observations from comments without default tables", () => {
   const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
   for (const text of [prompt, skill]) {
-    for (const requirement of ["3-6 flat bullets", "a single", "Avoid nested lists",
-      "rather than dropping findings", "A tool failure is not an empty result"])
+    for (const requirement of ["numbered findings", "Yorum:", "Genel değerlendirme:",
+      "rather than dropping findings", "Use tables or charts only when the user asks",
+      "at most 25 words", "Keep exact metric IDs", "mark\nhypotheses as hypotheses",
+      "A tool failure is not an empty result"])
       assert.ok(text.includes(requirement), `Missing answer requirement: ${requirement}`);
+    assert.ok(!text.includes("3-6 flat bullets"));
+    assert.ok(!text.includes("put it in a\ncompact table"));
   }
 });
