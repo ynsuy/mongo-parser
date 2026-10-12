@@ -85,8 +85,9 @@ still contain gaps, so check `mongo_coverage` before correlating across nodes.
 
 ## Reporting
 
-Include the parser's chart verbatim in a fenced code block when it supports the point. It is compact
-plain text, not an image; keep its scale, timestamps, names and values exactly as returned.
+Quote a parser chart from `render` in a fenced code block; keep its scale, timestamps, names and
+values exactly as returned. A paged answer is read whole, every page through `mongo_page`, before
+anything is concluded from it.
 
 State what is missing when the evidence stops short of a cause, and name the artifact that would
 settle it.
@@ -98,9 +99,9 @@ and grouping basis; one observed slow execution does not establish recurrence or
 frequency. Aggregate FTDC counters and a selected slow-log example are different populations.
 Keep ranked findings separate from causal reasoning and from remediation recommendations.
 
-Read structured `execution_examples` and their observed `command_options` before declaring an
-operation setting unknown. Examples describe sampled executions, not every operation or a default.
-If transport omitted commands, retrieve narrower examples or raw lines and distinguish not
-retrieved from not present. Before finalizing, reconcile each returned open/notice row by label,
+Read structured `execution_examples` and their commands before declaring an operation setting
+unknown. Examples describe sampled executions, not every operation or a default. When the one you
+need is not among them, retrieve narrower examples or raw lines and distinguish not retrieved from
+not present. Before finalizing, reconcile each returned open/notice row by label,
 source and instance with a reported observation or explicit deferral. State explicitly when a
 cited execution precedes/follows FTDC coverage and cannot be correlated with those metrics.

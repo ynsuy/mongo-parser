@@ -87,25 +87,16 @@ A slow operation and a busy one can print the same duration. `mongo_slow` summar
 fields; these guide investigation but do not settle cause or exclude query/workload contributions.
 Compare with FTDC only where node identity and time coverage support it.
 
-The model receives a budgeted JSON projection, capped at 32 KiB per tool result, with a bounded
-presentation excerpt where typed data is incomplete. The terminal retains full tables and charts.
-General reports omit the full rule catalogue and operation histories. Label inventory rows retain
-identity, numerical summaries and observed times; detailed bands, episodes and correlations are
-opened on demand. Observed `level`/`peak_level` fuzzy memberships remain in the initial inventory;
-only the reference-band definitions are deferred. Slow-shape summaries keep counts, grouping,
-bounds and numeric evidence; partial
-lists retain aggregate-duration and maximum-duration leaders rather than only high-frequency work.
-Whole-result slow totals remain separate from retained shape lists. `transport.omissions` states
-partial collections and original/returned counts. Missing projected evidence is unknown, never
-zero or normal; narrow by node/time/label/namespace/hash/group for detail. The byte cap is a safety
-bound, not a measured tokenizer count or a guarantee against arbitrary accumulated session history.
-Automatic compaction reserves 16,384 tokens; start a fresh session after an old oversized result.
+The model receives the parser's whole answer: every field of its JSON and every line of the tables
+and charts it drew, nothing projected or cut. An answer larger than a quarter of the model's context
+window (at most 512 KiB, at least 64 KiB) arrives in pages; the first names the result and the page
+count, and `mongo_page` returns the rest. The pages joined are the answer byte for byte. Automatic
+compaction still summarizes older turns once the session fills the window (16,384 tokens are
+reserved), so a long session over a large bundle is better started fresh than compacted.
 
 Focused slow results include structured `execution_examples` with command documents, UTC times,
-source/context and logged waits, independent of the presentation excerpt. They are the slowest
-retained examples of the costliest matched group, not representative of all operations. Observed
-command controls are duplicated in `command_options` so large predicates/documents can shrink
-without hiding a small write/read concern setting. Omissions remain explicit; no defaults are inferred.
+source/context and logged waits. They are the slowest examples of the costliest matched group, not
+representative of all operations; no defaults are inferred.
 
 Parser descriptions and log-pattern titles report observations, not preset causes or fixes.
 `evidence_policy` accompanies tool data. Log signals separate `review_priority` from actual

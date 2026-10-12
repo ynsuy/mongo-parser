@@ -15,7 +15,7 @@ test("incident reporting preserves isolated findings and observed slow-operation
     "the width of a drawn dip or plateau does",
     "reconcile every returned open/notice row",
     "execution_examples",
-    "command_options",
+    "Read every\npage with `mongo_page`",
     'Say "not retrieved"',
     "falls outside the matching node's FTDC coverage",
   ]) assert.ok(prompt.includes(requirement), `Missing requirement: ${requirement}`);

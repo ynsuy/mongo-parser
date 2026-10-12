@@ -7,7 +7,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { selectPath, directory } from "../lib/data-path.js";
-import { parserResult, type ParserReport } from "../lib/tool-result.js";
+import { pageBytes, pageHeader, parserResult, ResultPages, type ParserReport } from "../lib/tool-result.js";
 import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
 
 const runFile = promisify(execFile);
@@ -114,9 +114,13 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
   }
 }
 
-// Send structured evidence to the model while preserving the parser's terminal presentation.
-function result(report: Report) {
-  return parserResult(report, bundleVersion);
+// Every answer that needed more than one page, for mongo_page.
+const pages = new ResultPages();
+
+// Send the parser's whole answer to the model, in pages sized to its context window when it is
+// large, while the terminal keeps the parser's own presentation.
+function result(ctx: ExtensionContext, report: Report) {
+  return parserResult(report, bundleVersion, pageBytes(ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow), pages);
 }
 
 type ToolResult = { isError?: boolean; details?: { data?: Report } };
@@ -231,8 +235,8 @@ ${dataPath
       only: Type.Optional(Type.Array(Type.String(), { maxItems: 9, description: "Sections to print: deployment, labels, activity, slow, replication, storage, ddl, signals, logs. Every section by default." })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("report", [
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("report", [
         ...arg("only", (p.only ?? []).join(",")), ...windowArgs(p),
       ], signal));
     },
@@ -246,7 +250,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_label",
     label: "MongoDB label opened",
-    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst sample, stretches of samples past its mark, longest first, with observed timestamps; elapsed durations require cadence and gap checks, and for the longest few windows: the labels the rule pairs with, read over those samples beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window sample by sample, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_over_trigger, disk.await.",
+    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst sample, stretches of samples past its mark, longest first, with observed timestamps; elapsed durations require cadence and gap checks, and for the longest few windows: the labels the rule pairs with, read over those samples beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window sample by sample, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_above_20, disk.await.",
     parameters: Type.Object({
       label: Type.String({ description: "The label to open, as the report printed it, e.g. tickets.read.empty" }),
       source: Type.Optional(Type.String({ description: "The node to open it on, as the report printed it. Every node that has the label by default." })),
@@ -255,8 +259,8 @@ ${dataPath
       span: Type.Optional(Type.String({ description: "How much around at to print second by second, e.g. 2m. 4m by default, at most 15m" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("label", [
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("label", [
         p.label, ...arg("source", p.source), ...arg("instance", p.instance), ...arg("at", p.at),
         ...arg("span", p.span), ...windowArgs(p),
       ], signal));
@@ -273,8 +277,8 @@ ${dataPath
     label: "MongoDB bundle coverage",
     description: "What the bundle actually holds, and what it does not: every node found, what each one's logs and FTDC cover in time, which nodes are named by what evidence, and the blind spots — stretches where a node wrote no log line at all, each one labelled with what it opened and closed with, so a gap left by a crash reads differently from one left by a missing rotation. Call this first. Every other answer is bounded by what this reports: a question about a window nobody logged has no answer, and a count that looks low is often a log that was not collected rather than an event that did not happen.",
     parameters: Type.Object({}),
-    async execute(_id, _params, signal) {
-      return result(await run("coverage", [], signal));
+    async execute(_id, _params, signal, _update, ctx) {
+      return result(ctx, await run("coverage", [], signal));
     },
     ...renderer("coverage", (report) => {
       const nodes = (report.data as Record<string, unknown>).nodes as unknown[] | undefined;
@@ -296,10 +300,10 @@ ${dataPath
       bin: Type.Optional(Type.Integer({ minimum: 1, description: "Bin size in seconds; chosen from the window by default" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
+    async execute(_id, p, signal, _update, ctx) {
       const sources = (p.sources ?? []).flatMap((source) => ["--source", source]);
       const metrics = (p.metrics ?? []).flatMap((metric) => ["--metric", metric]);
-      return result(await run("metrics", [
+      return result(ctx, await run("metrics", [
         ...sources, ...metrics, ...arg("top", p.top), ...arg("height", p.height),
         ...arg("bin", p.bin), ...windowArgs(p),
         ...(p.overlay ? ["--overlay"] : []),
@@ -322,8 +326,8 @@ ${dataPath
       records: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "How many lines to show for a group" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("logs", [
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("logs", [
         ...arg("top", p.top), ...arg("category", p.category), ...arg("severity", p.severity),
         ...arg("source", p.source), ...arg("contains", p.contains), ...arg("group", p.group),
         ...arg("records", p.records), ...windowArgs(p),
@@ -347,8 +351,8 @@ ${dataPath
       no_detail: Type.Optional(Type.Boolean({ description: "Leave out the drill-down a filter would otherwise add, keeping only the ranked table" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("slow", [
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("slow", [
         ...arg("top", p.top), ...arg("plan", p.plan), ...arg("ns", p.ns), ...arg("op", p.op),
         ...arg("query-hash", p.query_hash), ...arg("waited-on", p.waited_on),
         ...arg("examples", p.examples), ...(p.no_detail ? ["--no-detail"] : []),
@@ -381,9 +385,9 @@ ${dataPath
       count: Type.Optional(Type.Boolean({ description: "Only count the matching lines, by node" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
+    async execute(_id, p, signal, _update, ctx) {
       const attrs = (p.attr ?? []).flatMap((test) => ["--attr", test]);
-      return result(await run("lines", [
+      return result(ctx, await run("lines", [
         ...arg("node", p.node), ...arg("sev", p.sev), ...arg("comp", p.comp), ...arg("id", p.id),
         ...arg("ctx", p.ctx), ...arg("msg", p.msg), ...arg("grep", p.grep), ...attrs,
         ...arg("limit", p.limit), ...(p.newest ? ["--newest"] : []), ...(p.count ? ["--count"] : []),
@@ -398,8 +402,8 @@ ${dataPath
     label: "MongoDB data size",
     description: "How much data there is and where it sits: the size of each mount the server's files are on, how full it is, and what the collector recorded for them, together with the index rebuilds that would have to re-read it. Mount utilization is an observation, not a diagnosed failure.",
     parameters: Type.Object({}),
-    async execute(_id, _params, signal) {
-      return result(await run("storage", [], signal));
+    async execute(_id, _params, signal, _update, ctx) {
+      return result(ctx, await run("storage", [], signal));
     },
     ...renderer("storage", () => "data sizes"),
   });
@@ -411,8 +415,8 @@ ${dataPath
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Which printout to read, e.g. serverstatus, rs_status, host_info, getcmdlineopts" })),
     }),
-    async execute(_id, p, signal) {
-      return result(await run("shell", p.name ? [p.name] : [], signal));
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("shell", p.name ? [p.name] : [], signal));
     },
     ...renderer("shell output", (report) => String((report.data as Record<string, unknown>).kind ?? "shell outputs")),
   });
@@ -422,8 +426,8 @@ ${dataPath
     label: "MongoDB deployment",
     description: "What was actually running: per process the role (mongod, mongos, shard server or config server), the version it is on now and the ones it was on before, when it last started, storage engine, WiredTiger cache size, replica set, whether authorization was on, how many times it started inside the window, and whether it ever came up after an unclean shutdown. Under the table, the version each process came up on at each restart in order — which is what separates a finished upgrade from one that stalled halfway or was rolled back, and a set of version strings cannot. All of it is written once at startup, so a bundle whose logs were rotated past the last restart reports that instead of a number. Call this before reading any other figure: a queue depth means one thing on a 4 GB cache and another on 200 GB, and a counter that reset at a restart is not a counter.",
     parameters: Type.Object({ ...windowFlags }),
-    async execute(_id, p, signal) {
-      return result(await run("deployment", windowArgs(p), signal));
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("deployment", windowArgs(p), signal));
     },
     ...renderer("deployment", (report) => {
       const summary = (report.data.summary as Record<string, unknown>) ?? {};
@@ -441,8 +445,8 @@ ${dataPath
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many rows of each table to show" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("ddl", [...arg("ns", p.ns), ...arg("kind", p.kind), ...arg("top", p.top), ...windowArgs(p)], signal));
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("ddl", [...arg("ns", p.ns), ...arg("kind", p.kind), ...arg("top", p.top), ...windowArgs(p)], signal));
     },
     ...renderer("catalog changes", (report) =>
       `${(report.data.index_builds as unknown[])?.length ?? 0} index builds · ${(report.data.changes as unknown[])?.length ?? 0} other changes`),
@@ -456,9 +460,26 @@ ${dataPath
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "How many conditions to show" })),
       ...windowFlags,
     }),
-    async execute(_id, p, signal) {
-      return result(await run("health", [...arg("top", p.top), ...windowArgs(p)], signal));
+    async execute(_id, p, signal, _update, ctx) {
+      return result(ctx, await run("health", [...arg("top", p.top), ...windowArgs(p)], signal));
     },
     ...renderer("health", (report) => `${(report.data.signals as unknown[])?.length ?? 0} conditions`),
+  });
+
+  pi.registerTool({
+    name: "mongo_page",
+    label: "Next page of a parser answer",
+    description: "Read another page of a parser answer that was too big for one result. A paged answer starts with a line naming its result id and page count; it is one JSON document split at byte boundaries, so join the pages in order and read every page before concluding anything from it. Nothing in a paged answer is omitted.",
+    parameters: Type.Object({
+      result: Type.String({ description: "The paged_result id from the first page, e.g. r3" }),
+      page: Type.Integer({ minimum: 2, description: "The page to read, from 2 to the page count" }),
+    }),
+    async execute(_id, p) {
+      const { text, pages: total } = pages.page(p.result, p.page);
+      return { content: [{ type: "text" as const, text: `${pageHeader(p.result, p.page, total)}\n${text}` }], details: {} };
+    },
+    renderCall(args: { result?: string; page?: number }, theme: Theme) {
+      return new Text(`${theme.fg("accent", "◆")} ${theme.fg("toolTitle", `page ${args.page ?? "?"} of ${args.result ?? "?"}`)}`, 0, 0);
+    },
   });
 }
