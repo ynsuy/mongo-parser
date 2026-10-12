@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"mongo-log-parser/internal/analyze"
@@ -74,17 +73,12 @@ func slowTimeline(shapes []analyze.Shape, first, last time.Time, binSeconds int6
 	// its length in the same cells as whichever plan dominates — a chart of overlap marks — and it
 	// says nothing the top of the lines below it does not already say.
 	from, to := float64(alignDown(first, binSeconds).UnixMilli()), float64(alignDown(last, binSeconds).UnixMilli())
-	chart := render.MetricPanel(rows, render.PanelOptions{
+	chart := gnuplotPanel(rows, render.PanelOptions{
 		Width: width, Height: slowChartRows, Color: color, First: from, Last: to,
 		Title: fmt.Sprintf("Slow queries per %s  ·  %s in the window",
 			render.BinLabel(binSeconds), render.Compact(float64(total))),
 	})
-	indent := strings.Repeat(" ", render.PanelIndent()-1)
-	out := []string{chart}
-	for _, line := range render.TimeRuler(from, to, render.PanelColumns(width)) {
-		out = append(out, indent+line)
-	}
-	return strings.Join(out, "\n")
+	return chart
 }
 
 // planLabel is what the legend calls a plan. A shape whose log line carried no plan summary is

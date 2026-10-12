@@ -245,7 +245,7 @@ func activityChart(activity *analyze.Activity, first, last time.Time, binSeconds
 		if warnings > 0 {
 			lines = append(lines, countSeries("warnings (W)", fold(activity.Warnings, binSeconds), first, last, binSeconds))
 		}
-		panels = append(panels, render.MetricPanel(lines, render.PanelOptions{
+		panels = append(panels, gnuplotPanel(lines, render.PanelOptions{
 			Width: width, Height: slowChartRows, Color: color, First: from, Last: to,
 			Title: fmt.Sprintf("Errors and warnings per %s  ·  %s and %s in the window",
 				render.BinLabel(binSeconds), render.Compact(float64(errors)), render.Compact(float64(warnings))),
@@ -261,15 +261,11 @@ func activityChart(activity *analyze.Activity, first, last time.Time, binSeconds
 			lines = append(lines, countSeries(string(category), fold(activity.Category(category), binSeconds), first, last, binSeconds))
 		}
 	}
-	panels = append(panels, render.MetricPanel(lines, render.PanelOptions{
+	panels = append(panels, gnuplotPanel(lines, render.PanelOptions{
 		Width: width, Height: slowChartRows - 2, Color: color, First: from, Last: to,
 		Title: "Log lines per " + render.BinLabel(binSeconds),
 	}))
 
-	indent := strings.Repeat(" ", render.PanelIndent()-1)
-	for _, ruler := range render.TimeRuler(from, to, render.PanelColumns(width)) {
-		panels = append(panels, indent+ruler)
-	}
 	return strings.Join(panels, "\n")
 }
 

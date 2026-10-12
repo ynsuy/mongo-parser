@@ -115,28 +115,18 @@ func runMetrics(root string, args []string) error {
 		return fmt.Errorf("no metrics matched; try --metric or a wider window")
 	}
 
-	useColour := useColor(*color) && !c.json
-	var rendered string
-	switch {
-	case *grid:
-		rendered = render.MetricGrid(drawn, render.GridOptions{
-			Width: outputWidth(c.width), ChartHeight: *height, Color: useColour,
-			Sources: set.sources, Selected: -1,
-		})
-	case *overlay:
-		charts := make([]string, 0, len(order))
-		for _, path := range order {
-			charts = append(charts, render.MetricOverlay(perMetric[path], render.OverlayOptions{Width: outputWidth(c.width), Height: max(*height, 6), Color: useColour}))
+	// Gnuplot draws every selected stream; JSON evidence remains available if plotting is unavailable.
+	rendered, chartErr := render.GnuplotReport(drawn, render.GnuplotOptions{Width: outputWidth(c.width), Height: *height, Grid: *grid, Overlay: *overlay})
+	var notes []string
+	if chartErr != nil {
+		if !c.json {
+			return chartErr
 		}
-		rendered = strings.Join(charts, "\n\n")
-	default:
-		rendered = render.MetricsReport(drawn, render.ReportOptions{
-			Width: outputWidth(c.width), ChartHeight: *height, Color: useColour,
-		})
+		notes = append(notes, chartErr.Error())
 	}
+	_ = color // Color remains accepted for CLI compatibility; gnuplot dumb output is monochrome.
 	footer := fmt.Sprintf("%d chunks indexed across %s; %s; decode and render in %s",
 		set.chunks, plural(len(set.streams), "stream"), strings.Join(set.spans(), "; "), time.Since(started).Round(time.Millisecond))
-	var notes []string
 	if damage := damageNote(samples, set.sources); damage != "" {
 		notes = append(notes, damage)
 		footer = damage + "\n\n" + footer

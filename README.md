@@ -28,6 +28,7 @@ cannot be established; neither an isolated maximum nor a dominant logged wait es
 ## Install and run
 
 Requires Git, Bash and Go 1.26+ (macOS, Linux or WSL). PIDBA also needs Node.js 22.19.0+ and npm.
+For terminal charts, install gnuplot: `brew install gnuplot` (macOS) or `sudo apt install gnuplot` (Debian/Ubuntu).
 
 ```bash
 git clone https://github.com/ynsuy/pidba.git

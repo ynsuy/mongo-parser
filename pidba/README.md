@@ -7,6 +7,7 @@ local store and draws its own tables and charts. The agent runs it, shows what i
 about it in words.
 
 Requires Go 1.26+, Node.js 22.19.0+ and npm, plus Bash (macOS, Linux, or WSL).
+Parser terminal charts use gnuplot (`brew install gnuplot` on macOS); model evidence stays structured JSON.
 Run these commands from the repository root after [cloning the repository](../README.md#install-and-run):
 
 ```bash

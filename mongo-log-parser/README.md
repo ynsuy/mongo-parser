@@ -4,7 +4,9 @@ Reads a MongoDB support bundle — structured logs, log exports, `diagnostic.dat
 and configs, in any mix of directories and archives — once into a local store, and answers from
 there.
 
-Requires Go 1.26+ and Bash on macOS, Linux, or WSL. From a fresh clone, enter the parser directory:
+Requires Go 1.26+ and Bash on macOS, Linux, or WSL. Terminal charts also need gnuplot
+(`brew install gnuplot` on macOS; `sudo apt install gnuplot` on Debian/Ubuntu).
+From a fresh clone, enter the parser directory:
 
 ```bash
 git clone https://github.com/ynsuy/pidba.git
@@ -76,9 +78,9 @@ tag and how far past it the tree is, or the baseline version and a fingerprint o
 there is no git. `mongo-log-parser version` prints it; pidba displays it, because a
 stale binary answers in the same format as a current one.
 
-Terminal charts use ASCII strokes and axes; tables use plain ASCII borders. Color is off by default
+Time-series charts use gnuplot's monochrome `dumb` terminal; tables use plain ASCII borders. Color is off by default
 (`--color never`). Explicit `--color auto` or `--color always` still enables styling where supported.
-Multiple series have distinct strokes and a legend; `. = gap` identifies missing data rather than zero.
+Multiple series have distinct marks and a legend. Missing samples break the plotted line instead of becoming zeros.
 `~` marks a shortened display name or cell; full structured values remain in JSON.
 Names and log text retain their original characters. JSON data and metric calculations are unchanged.
 
@@ -95,4 +97,6 @@ Add `--source`, `--from`, `--to` or `--bin 60` to focus the graph. `--json --cha
 `signal_series` with sample statistics and min/avg/max time bins. For time-above/below labels,
 the chart shows the underlying signal, not the normalized s/min view. Ordinary label charts plot
 sample-weighted means; depletion charts retain minima. Exact sample extrema remain in the summary
-and JSON. `plot_aggregation` records the selected plotting rule.
+and JSON. `plot_aggregation` records the selected plotting rule. Charts appear outside the statistics table,
+with a UTC time axis. `metrics`, log activity and slow-query time-series use the same gnuplot backend.
+If gnuplot is unavailable, chart requests explain how to install it; structured JSON remains available.

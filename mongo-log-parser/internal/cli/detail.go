@@ -196,14 +196,12 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 	shape.Timeline.Fold(binSeconds, folded)
 
 	from, to := float64(alignDown(first, binSeconds).UnixMilli()), float64(alignDown(last, binSeconds).UnixMilli())
-	indent := strings.Repeat(" ", render.PanelIndent()-1)
-	ruler := render.TimeRuler(from, to, render.PanelColumns(width))
 
 	// A panel each, rather than lines sharing one. Milliseconds and a count share no axis, and the
 	// wait shares an axis with the duration but not a question: on the duration panel it was a
 	// fourth line in a legend that had already run out of room, and its own shape — steady drip or
 	// one bad hour — was the thing it was drawn to show.
-	cost := render.MetricPanel([]series.Series{
+	cost := gnuplotPanel([]series.Series{
 		binSeries("max ms", folded, func(bin analyze.Bin) float64 { return bin.Max }, first, last, binSeconds),
 		binSeries("avg ms", folded, analyze.Bin.Avg, first, last, binSeconds),
 		binSeries("min ms", folded, func(bin analyze.Bin) float64 { return bin.Min }, first, last, binSeconds),
@@ -215,7 +213,7 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 	out := []string{cost}
 
 	if waited := waitTotalOf(shape); shape.Duration.Sum > 0 && waited/shape.Duration.Sum >= chartableWait {
-		out = append(out, render.MetricPanel([]series.Series{
+		out = append(out, gnuplotPanel([]series.Series{
 			binSeries("avg wait ms", folded, analyze.Bin.AvgWait, first, last, binSeconds),
 			binSeries("avg ms", folded, analyze.Bin.Avg, first, last, binSeconds),
 		}, render.PanelOptions{
@@ -229,15 +227,12 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 		}))
 	}
 
-	runs := render.MetricPanel([]series.Series{
+	runs := gnuplotPanel([]series.Series{
 		binSeries("executions", folded, func(bin analyze.Bin) float64 { return float64(bin.Count) }, first, last, binSeconds),
 	}, render.PanelOptions{
 		Width: width, Height: detailChartRows - 3, Color: color, First: from, Last: to,
 		Title: fmt.Sprintf("Executions per %s  ·  %s in the window", render.BinLabel(binSeconds), render.Compact(float64(shape.Count))),
 	})
 	out = append(out, runs)
-	for _, line := range ruler {
-		out = append(out, indent+line)
-	}
 	return strings.Join(out, "\n")
 }

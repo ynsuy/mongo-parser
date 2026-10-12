@@ -127,7 +127,15 @@ func runLabel(root string, args []string) error {
 			if *chart {
 				plotted := labelSignalSeries(r.Rule(), node, r.Instance, samples, start, end, *bin, outputWidth(c.width))
 				entry.SignalSeries = &plotted
-				body = render.MetricsReport([]series.Series{plotted}, render.ReportOptions{Width: outputWidth(c.width), ChartHeight: 6, Color: options.Color}) + "\n\n" + body
+				chartText, chartErr := render.GnuplotReport([]series.Series{plotted}, render.GnuplotOptions{Width: outputWidth(c.width), Height: 8})
+				if chartErr != nil {
+					if !c.json {
+						return chartErr
+					}
+					notes = append(notes, chartErr.Error())
+				} else {
+					body = chartText + "\n\n" + body
+				}
 			}
 			entries = append(entries, entry)
 			sections = append(sections, body)
