@@ -33,3 +33,15 @@ test("timing and reference labels are not preset diagnoses or remediation", () =
     "Writes that are slow while the CPU is idle",
   ]) assert.ok(!prompt.includes(oldClaim), `Preset cause returned: ${oldClaim}`);
 });
+
+test("visual reporting uses structured ASCII values and preserves evidence scope", () => {
+  const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
+  for (const text of [prompt, skill]) {
+    for (const requirement of ["plain ASCII charts", "do not use ANSI colors",
+      "never interpolate gaps or invent points", "shared time window and value scale",
+      "low=true", "exact relevant values", "`notes`", "retrieve required pages again"])
+      assert.ok(text.includes(requirement), `Missing visual requirement: ${requirement}`);
+    assert.ok(!text.includes("show the chart the parser returned"));
+    assert.ok(!text.includes("Quote a parser chart from `render`"));
+  }
+});

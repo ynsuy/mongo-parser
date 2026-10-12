@@ -22,7 +22,7 @@ import (
 // runShell prints what the bundle's shell printouts say, or lists them when none is named.
 func runShell(root string, args []string) error {
 	flags, c := newFlags("shell")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	words, err := parse(flags, args)
 	if err != nil {
 		return err

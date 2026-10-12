@@ -149,9 +149,9 @@ func Fit(text string, width int, align Align) string {
 	}
 	runes := []rune(text)
 	if align == AlignTail {
-		return "…" + string(runes[length-(width-1):])
+		return "~" + string(runes[length-(width-1):])
 	}
-	return string(runes[:width-1]) + "…"
+	return string(runes[:width-1]) + "~"
 }
 
 // BinLabel names a bin size the way a human would say it.

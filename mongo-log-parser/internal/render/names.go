@@ -86,7 +86,7 @@ func headAndSuffix(path string, depth int) string {
 	if len(segments) <= depth+1 {
 		return strings.Join(segments, ".")
 	}
-	return segments[0] + "…" + strings.Join(segments[len(segments)-depth:], ".")
+	return segments[0] + "~" + strings.Join(segments[len(segments)-depth:], ".")
 }
 
 // Sources is the line naming every stream on a board and the colour it was drawn in.

@@ -55,12 +55,13 @@ bundle whose logs were rotated past the last restart will say it cannot tell you
   `mongo_storage` for how full the mounts are.
 
 Reuse the names a report gave you. Do not repeat `mongo_coverage` once the nodes are known, and do
-not repeat a call with arguments you have already used.
+not repeat a call with arguments you have already used unless compaction removed required evidence.
 
 ## Focused requests
 
 "Show the tickets between these two times" is not an incident investigation. Retrieve the requested
-metric for the requested window, show the chart the parser returned, and stop. Run a full RCA only
+metric for the requested window, draw a plain ASCII chart or table from the returned structured
+values, and stop. Run a full RCA only
 when asked for one.
 
 ## Correlating
@@ -85,9 +86,24 @@ still contain gaps, so check `mongo_coverage` before correlating across nodes.
 
 ## Reporting
 
-Quote a parser chart from `render` in a fenced code block; keep its scale, timestamps, names and
-values exactly as returned. A paged answer is read whole, every page through `mongo_page`, before
-anything is concluded from it.
+Use structured `data` for numbers and descriptions. Parser tables and charts are displayed locally
+in the terminal; tool content contains structured JSON only. A paged answer is read whole, every
+page through `mongo_page`, before anything is concluded from it.
+
+Support answers with compact plain ASCII charts in fenced code blocks or tables when they make
+comparisons or timing clearer. Use only returned structured values; do not use ANSI colors,
+Unicode block sparklines or decorative drawing characters. Label the source/node, metric, unit,
+UTC time bounds, bin size and aggregation (min, avg or max). Preserve zeros, isolated extrema and
+missing-data gaps; never interpolate gaps or invent points. For low=true series use bucket minima
+to show depletion; otherwise choose and label the aggregation that answers the question. Use a
+shared time window and value scale when comparing nodes, with distinct ASCII symbols and a legend.
+A visual is a summary: retain exact relevant values, timestamps, counts and coverage in text or a
+table. If the returned data cannot support a time chart, use a table or retrieve the missing data.
+
+Read `notes` and quality/coverage fields. Rankings, retained examples and time bins are scoped
+summaries; retrieve narrower evidence when omitted rows or sample detail matter. After compaction,
+retrieve required pages again or rerun a tool rather than drawing precise conclusions from a
+conversation summary.
 
 State what is missing when the evidence stops short of a cause, and name the artifact that would
 settle it.

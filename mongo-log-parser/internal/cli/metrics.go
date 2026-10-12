@@ -25,7 +25,7 @@ func runMetrics(root string, args []string) error {
 	list := flags.Bool("list", false, "list the metrics worth charting, by group, instead of drawing them")
 	overlay := flags.Bool("overlay", false, "draw every stream of a metric on one chart instead of one chart each")
 	grid := flags.Bool("grid", false, "a stream to a column and a metric to a row")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	words, err := parse(flags, args)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func runMetrics(root string, args []string) error {
 	// an empty board reads as a quiet deployment, which is the opposite of what happened.
 	if len(set.streams) == 0 {
 		return emit(os.Stdout, c.json, "metrics", root, []series.Series{},
-			withVersion("no FTDC in this bundle, so there are no metrics to chart: diagnostic.data is what carries them, and nothing here holds one.\nWhat the logs say is in: report, slow, logs, health."))
+			withVersion("no FTDC in this bundle, so there are no metrics to chart: diagnostic.data is what carries them, and nothing here holds one.\nWhat the logs say is in: report, slow, logs, health."), []string{"No FTDC in this bundle; metrics are unavailable, not zero."})
 	}
 	start, end, err := w.resolve(st, set.last)
 	if err != nil {
@@ -136,10 +136,12 @@ func runMetrics(root string, args []string) error {
 	}
 	footer := fmt.Sprintf("%d chunks indexed across %s; %s; decode and render in %s",
 		set.chunks, plural(len(set.streams), "stream"), strings.Join(set.spans(), "; "), time.Since(started).Round(time.Millisecond))
+	var notes []string
 	if damage := damageNote(samples, set.sources); damage != "" {
+		notes = append(notes, damage)
 		footer = damage + "\n\n" + footer
 	}
-	return emit(os.Stdout, c.json, "metrics", root, drawn, withVersion(rendered+"\n\n"+footer))
+	return emit(os.Stdout, c.json, "metrics", root, drawn, withVersion(rendered+"\n\n"+footer), notes)
 }
 
 // group is a set of metrics filed under one subject, for the listing.

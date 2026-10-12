@@ -45,7 +45,7 @@ func TestSharedScaleAcrossSourcesOfOneMetric(t *testing.T) {
 	}
 	// node-b's own maximum must not become an axis label of its own.
 	for _, line := range strings.Split(report, "\n") {
-		if strings.Contains(line, "4.0 ┤") || strings.Contains(line, "4 ┤") {
+		if regexp.MustCompile(`^\s*4(?:\.0)? \|`).MatchString(line) {
 			t.Errorf("node-b was drawn to its own scale: %q", line)
 		}
 	}
@@ -186,7 +186,7 @@ func TestOverlayRowsAreExactlyAsWideAsTheyLook(t *testing.T) {
 	chart := MetricOverlay(rows, OverlayOptions{Width: 96, Height: 6, Color: false})
 	widths := map[int]bool{}
 	for _, line := range strings.Split(chart, "\n") {
-		if strings.Contains(line, "┤") {
+		if regexp.MustCompile(`^\s*-?\d+(?:\.\d+)?(?:[A-Za-z/]+)? \|`).MatchString(line) {
 			widths[utf8.RuneCountInString(line)] = true
 		}
 	}

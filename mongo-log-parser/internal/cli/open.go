@@ -25,7 +25,7 @@ func runLabel(root string, args []string) error {
 	instance := fs.String("instance", "", "the disk or member, for a label that has them")
 	atText := fs.String("at", "", "a moment to read second by second (UTC)")
 	span := fs.Duration("span", 4*time.Minute, "how much around --at to read second by second")
-	color := fs.String("color", "auto", "auto, always or never")
+	color := fs.String("color", "never", "never (default), auto or always")
 	words, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func runLabel(root string, args []string) error {
 		return err
 	}
 	if len(set.streams) == 0 {
-		return emit(os.Stdout, c.json, "label", root, []openedEntry{}, withVersion("no FTDC in this bundle, so there are no labels to open"))
+		return emit(os.Stdout, c.json, "label", root, []openedEntry{}, withVersion("no FTDC in this bundle, so there are no labels to open"), []string{"No FTDC in this bundle; labels are unavailable, not ordinary."})
 	}
 	start, end, err := w.resolve(st, set.last)
 	if err != nil {
@@ -95,6 +95,9 @@ func runLabel(root string, args []string) error {
 			notes = append(notes, node+": "+err.Error())
 			continue
 		}
+		if damage := damageLine(samples, node); damage != "" {
+			notes = append(notes, damage)
+		}
 		results, skipped := label.Run(samples, node, stream.Identity().Version, start, end)
 		label.Relate(results)
 		found := false
@@ -126,7 +129,7 @@ func runLabel(root string, args []string) error {
 	for _, o := range opened {
 		entries = append(entries, openedEntry{Opened: o, Rule: catalogueEntry(o.Result.Rule())})
 	}
-	return emit(os.Stdout, c.json, "label", root, entries, withVersion(text))
+	return emit(os.Stdout, c.json, "label", root, entries, withVersion(text), notes)
 }
 
 // openedEntry is one opened label with the definition it was read against, so the reading travels

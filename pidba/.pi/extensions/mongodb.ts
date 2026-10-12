@@ -110,6 +110,9 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
     return { ...JSON.parse(stdout), requested_args: args } as Report;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "unknown";
+    if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw new Error("Parser output exceeded the local 128 MiB buffer. No partial evidence was returned; narrow the time window, source or filters and retry.");
+    }
     throw new Error(`parser failed (${code}); check the selected directory and parser installation locally.`);
   }
 }
@@ -117,7 +120,7 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
 // Every answer that needed more than one page, for mongo_page.
 const pages = new ResultPages();
 
-// Send the parser's whole answer to the model, in pages sized to its context window when it is
+// Send the parser's structured evidence to the model, in pages sized to its context window when it is
 // large, while the terminal keeps the parser's own presentation.
 function result(ctx: ExtensionContext, report: Report) {
   return parserResult(report, bundleVersion, pageBytes(ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow), pages);
@@ -294,7 +297,7 @@ ${dataPath
     parameters: Type.Object({
       sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
       metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*. Every column FTDC holds is reachable, not only the board's: the kernel's TCP counters are systemMetrics/netstat/Tcp:* and TcpExt:* (RetransSegs, OutSegs, TCPTimeouts, ListenOverflows, CurrEstab)" })),
-      overlay: Type.Optional(Type.Boolean({ description: "Draw every stream of a metric on one chart, a colour per stream, instead of a chart each" })),
+      overlay: Type.Optional(Type.Boolean({ description: "Draw every stream of a metric on one monochrome chart with a legend, instead of a chart each" })),
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics of the standard board to draw when none are named" })),
       height: Type.Optional(Type.Integer({ minimum: 2, maximum: 20, description: "Chart rows per metric" })),
       bin: Type.Optional(Type.Integer({ minimum: 1, description: "Bin size in seconds; chosen from the window by default" })),

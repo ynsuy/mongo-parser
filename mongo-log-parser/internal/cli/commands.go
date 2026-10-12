@@ -23,7 +23,7 @@ import (
 func runDeployment(root string, args []string) error {
 	flags, c := newFlags("deployment")
 	w := addWindowFlags(flags)
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func runDDL(root string, args []string) error {
 	namespace := flags.String("ns", "", "only this namespace")
 	kind := flags.String("kind", "", "only this kind of change, e.g. \"drop collection\"")
 	top := flags.Int("top", 25, "how many rows of each table to show")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func runHealth(root string, args []string) error {
 	flags, c := newFlags("health")
 	w := addWindowFlags(flags)
 	top := flags.Int("top", 30, "how many conditions to show")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}

@@ -152,10 +152,10 @@ func MetricOverlay(rows []series.Series, options OverlayOptions) string {
 		byRow[i] = colors[row.Source]
 	}
 	for row, label := range labels {
-		out = append(out, Fit(label, gutter, AlignRight)+" ┤"+paintRow(grid[row], owner[row], byRow, paint))
+		out = append(out, Fit(label, gutter, AlignRight)+" |"+paintRow(grid[row], owner[row], byRow, paint))
 	}
 	plotted := utf8.RuneCountInString(string(grid[0]))
-	out = append(out, strings.Repeat(" ", gutter)+" └"+strings.Repeat("─", plotted))
+	out = append(out, strings.Repeat(" ", gutter)+" +"+strings.Repeat("-", plotted))
 	if options.Compact {
 		return strings.Join(out, "\n")
 	}
@@ -369,7 +369,7 @@ func overlayWindow(rows []series.Series) string {
 			continue
 		}
 		return row.Buckets[0].Start + " -> " + row.Buckets[len(row.Buckets)-1].Start +
-			" | " + BinLabel(row.BucketSeconds) + "/bin | " + binNote([]series.Series{row}) + "; · = gap"
+			" | " + BinLabel(row.BucketSeconds) + "/bin | " + binNote([]series.Series{row}) + "; . = gap"
 	}
 	return ""
 }

@@ -93,6 +93,11 @@ cols = [
     ('Worth opening from', 22, open_from),
     ('Duty mark', 16, mark),
     ('Min change', 12, lambda r: f"{r['min_change']:g} {r['unit']}"),
+    ('Open with (requires supporting label)', 36, lambda r: ', '.join(r.get('open_with') or [])),
+    ('View', 18, lambda r: r.get('view') or 'mean'),
+    ('Signal threshold', 18, lambda r: r.get('threshold')),
+    ('Signal unit', 12, lambda r: r['signal']['unit']),
+    ('Direction', 12, lambda r: r.get('direction') or 'up'),
     ('Pairs with', 34, lambda r: ', '.join(r.get('pairs_with') or [])),
     ('Reference', 30, lambda r: f"{r['reference']['value']:g} {r['reference']['unit']}: {r['reference']['source']} (configured value {r['reference']['configured']})" if r.get('reference') else ''),
     ('Applies', 50, lambda r: ' '.join((r.get('applies') or '').split())),
@@ -105,6 +110,21 @@ for i, r in enumerate(rules, start=2):
         c = ws.cell(i, j, read(r)); c.font = font; c.alignment = wrap; c.border = grid
 ws.freeze_panes = 'C2'
 ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(rules)+1}"
+raw = wb.create_sheet('Raw definitions')
+raw.append(['Definition', 'Label', 'Server versions', 'Complete JSON'])
+for i, r in enumerate(rules, start=1):
+    raw.append([i, r['name'], r['version_text'], json.dumps(r, ensure_ascii=False, sort_keys=True)])
+raw.freeze_panes = 'D2'
+raw.auto_filter.ref = f'A1:D{len(rules)+1}'
+for col, width in [('A', 12), ('B', 32), ('C', 24), ('D', 120)]:
+    raw.column_dimensions[col].width = width
+for row in raw:
+    for cell in row:
+        cell.font = bold if cell.row == 1 else font
+        cell.alignment = wrap
+        cell.border = grid
+        if cell.row == 1: cell.fill = head_fill
+os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 wb.save(out)
 print(len(rules), 'rows')
 

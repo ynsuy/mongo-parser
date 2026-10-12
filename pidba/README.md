@@ -6,12 +6,20 @@ exports, FTDC, shell printouts and configs, in any mix of directories and archiv
 local store and draws its own tables and charts. The agent runs it, shows what it drew, and reasons
 about it in words.
 
+Requires Go 1.26+, Node.js 22.19.0+ and npm, plus Bash (macOS, Linux, or WSL).
+Run these commands from the repository root after [cloning the repository](../README.md#install-and-run):
+
 ```bash
-npm install
-scripts/pidba
+npm --prefix pidba ci
+./pidba/scripts/pidba --version
+./pidba/scripts/pidba
 ```
 
-Open with `pidba` once `scripts/pidba` is linked into a directory on your PATH.
+The first install/build downloads dependencies. `--version` verifies the launcher, Pi runtime and
+parser build without making a model request. No global Pi installation is required.
+
+The examples below use `pidba` as shorthand for `./pidba/scripts/pidba` from the repository root.
+You can optionally link `pidba/scripts/pidba` into a directory on your PATH.
 First use: type `/login`, select **OpenAI Codex**, and complete ChatGPT sign-in in the browser.
 The terminal remains Pi; its built-in `openai-codex` provider runs the model through your Codex
 subscription. This is not the Codex CLI and does not import its credentials.
@@ -43,7 +51,7 @@ The default is `openai-codex/gpt-5.5`, with medium reasoning. Override it with
 Credentials live in the separate, git-ignored `.pi/codex-agent` directory. Ollama is not needed.
 
 **Model requests go to OpenAI, and the bundle's contents go with them.** The parser runs locally,
-but what it prints — hostnames, namespaces, paths, application names, log text — is sent to the
+but its structured evidence — hostnames, namespaces, paths, application names, log text — is sent to the
 selected model as written. There is no masking layer: an earlier version of this agent replaced
 those names with local identifiers, and that was removed deliberately. Point this at a customer
 bundle only where sending that customer's operational data to OpenAI is something you are allowed
@@ -87,10 +95,11 @@ A slow operation and a busy one can print the same duration. `mongo_slow` summar
 fields; these guide investigation but do not settle cause or exclude query/workload contributions.
 Compare with FTDC only where node identity and time coverage support it.
 
-The model receives the parser's whole answer: every field of its JSON and every line of the tables
-and charts it drew, nothing projected or cut. An answer larger than a quarter of the model's context
+The model receives all structured evidence in `data`, with command and evidence metadata, as JSON.
+Rendered tables and charts stay in the terminal and are excluded from model content. No structured
+fields are sampled or cut. An answer larger than a quarter of the model's context
 window (at most 512 KiB, at least 64 KiB) arrives in pages; the first names the result and the page
-count, and `mongo_page` returns the rest. The pages joined are the answer byte for byte. Automatic
+count, and `mongo_page` returns the rest. The pages joined are the structured JSON byte for byte. Automatic
 compaction still summarizes older turns once the session fills the window (16,384 tokens are
 reserved), so a long session over a large bundle is better started fresh than compacted.
 
@@ -110,8 +119,9 @@ wording safeguards and unit tests are not end-to-end RCA validation.
 
 `mongo_metrics` takes several streams. Each is read over the same window and charted against the
 same value axis, because two nodes drawn to their own scales look alike however far apart their
-numbers are. Every stream gets a colour of its own and a legend line names them, and a metric that
-appears has a row for every node.
+numbers are. The JSON identifies every stream, and a metric that appears has a row for every node.
+PIDBA answers use plain ASCII charts or tables from the structured values, with labelled units,
+UTC times, aggregation and gaps; node comparisons use a shared scale and a legend.
 
 By default each stream gets its own chart under a shared axis. `overlay` puts them on one chart,
 which is the view for finding the moment two nodes stopped agreeing. Where lines cross, the one
@@ -126,7 +136,7 @@ From a terminal the same thing is:
 
 ## What reaches the model
 
-Everything the parser prints for a question the agent asks: node names, namespaces, paths,
+All structured evidence the parser returns for a question the agent asks: node names, namespaces, paths,
 application names, query shapes with their command documents, and log message text. What you type
 reaches it unchanged too. Nothing is masked or redacted on the way.
 
@@ -148,3 +158,7 @@ Ask the agent to filter by a reported query hash, or use the parser directly:
 ```bash
 ../mongo-log-parser/bin/mongo-log-parser slow /data/mongodb --query-hash ABC123EF
 ```
+
+Structured `notes` preserve unavailable-label reasons and FTDC decode warnings even though
+`render` is excluded from model content. Parser rankings, sampled examples and time bins retain
+their scope; paging preserves all returned JSON, not every raw record in the bundle.

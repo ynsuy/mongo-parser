@@ -59,7 +59,7 @@ func panelMarks(color bool) overlapMarks {
 	if color {
 		return overlapMarks{interleave: true}
 	}
-	return overlapMarks{level: '≡', cross: '┼'}
+	return overlapMarks{level: '&', cross: 'X'}
 }
 
 const (
@@ -146,7 +146,7 @@ func MetricPanel(rows []series.Series, options PanelOptions) string {
 
 	marker, titleStyle := "  ", plain
 	if options.Selected {
-		marker, titleStyle = "▸ ", bold
+		marker, titleStyle = "> ", bold
 	}
 	if len(rows) == 0 {
 		return strings.Join([]string{
@@ -182,7 +182,7 @@ func MetricPanel(rows []series.Series, options PanelOptions) string {
 	out = append(out, paint(panelHead(marker+options.Title, panelNote(drawn, lo, hi, options.Own), width), titleStyle))
 	margin := strings.Repeat(" ", panelIndent)
 	for row, label := range labels {
-		out = append(out, margin+Fit(label, MaxAxisGutter, AlignRight)+" ┤"+
+		out = append(out, margin+Fit(label, MaxAxisGutter, AlignRight)+" |"+
 			paintRow(grid[row], owner[row], colors, paint))
 	}
 	return strings.Join(append(out, panelLegend(rows, pens, colors, width, met, paint)), "\n")
@@ -246,12 +246,12 @@ func panelUnit(rows []series.Series) string {
 // panelNote is how to read the panel: how long a column is, and what the value axis covers.
 func panelNote(rows []series.Series, lo, hi float64, own bool) string {
 	unit := panelUnit(rows)
-	note := Amount(lo, unit) + " – " + Amount(hi, unit)
+	note := Amount(lo, unit) + " - " + Amount(hi, unit)
 	if own {
 		note = "each to its own peak, %"
 	}
 	if bin := BinLabel(binSecondsOf(rows)); bin != "" {
-		note = bin + "/col  ·  " + note
+		note = bin + "/col  .  " + note
 	}
 	return note
 }
@@ -267,7 +267,7 @@ func panelLegend(rows []series.Series, pens []strokes, colors []ansi, width int,
 	shown := panelLegendNames(names, width)
 	entries := make([]string, len(rows))
 	for i, row := range rows {
-		figures := "–"
+		figures := "-"
 		if row.Stats != nil {
 			figures = Amount(row.Stats.Max, row.Unit)
 			if row.Stats.Max != row.Stats.Avg {

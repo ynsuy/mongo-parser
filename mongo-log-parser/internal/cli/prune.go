@@ -69,7 +69,7 @@ func runPrune(_ string, args []string) error {
 		rows = append(rows, row)
 	}
 
-	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor("auto") && !c.json}
+	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor("never") && !c.json}
 	table := render.Table([]render.Column{
 		{Title: "Bundle", Values: pick(rows, func(r prunedStore) string {
 			if r.Missing {

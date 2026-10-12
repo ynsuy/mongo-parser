@@ -150,7 +150,7 @@ func reportHeader(rows []series.Series, first, last float64) []string {
 			break
 		}
 	}
-	return append(meta, binNote(rows), "· = gap")
+	return append(meta, binNote(rows), ". = gap")
 }
 
 // binNote says which end of a bin the line was drawn from. A pool is drawn from its trough, and a

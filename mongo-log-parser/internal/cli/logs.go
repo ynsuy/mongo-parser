@@ -29,7 +29,7 @@ func runLogs(root string, args []string) error {
 	group := flags.String("group", "", "show the lines of one group instead of the summary")
 	records := flags.Int("records", 10, "how many lines to show for a group")
 	noChart := flags.Bool("no-chart", false, "table only, without the activity chart above it")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}

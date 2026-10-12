@@ -29,3 +29,27 @@ func TestTimedRuleReadingDoesNotClaimElapsedSeconds(t *testing.T) {
 		}
 	}
 }
+
+// Notes must reach JSON consumers even when they do not read the terminal rendering.
+func TestJSONEnvelopePreservesUnavailableAndDamageNotes(t *testing.T) {
+	var out bytes.Buffer
+	notes := []string{"node B: metric unavailable", "node A: damaged FTDC chunk"}
+	if err := emit(&out, true, "label", "case", []openedEntry{}, "terminal table", notes); err != nil {
+		t.Fatal(err)
+	}
+	var got envelope
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Notes) != len(notes) {
+		t.Fatalf("notes lost: %+v", got)
+	}
+	for i, note := range notes {
+		if got.Notes[i] != note {
+			t.Fatalf("note changed: %+v", got)
+		}
+	}
+	if _, ok := got.Data.([]any); !ok {
+		t.Fatalf("array data shape changed: %+v", got.Data)
+	}
+}

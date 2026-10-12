@@ -22,7 +22,7 @@ func runStorage(root string, args []string) error {
 	flags, c := newFlags("storage")
 	w := addWindowFlags(flags)
 	top := flags.Int("top", 20, "how many collections to show")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}

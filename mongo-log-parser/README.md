@@ -4,7 +4,11 @@ Reads a MongoDB support bundle — structured logs, log exports, `diagnostic.dat
 and configs, in any mix of directories and archives — once into a local store, and answers from
 there.
 
+Requires Go 1.26+ and Bash on macOS, Linux, or WSL. From a fresh clone, enter the parser directory:
+
 ```bash
+git clone https://github.com/ynsuy/pidba.git
+cd pidba/mongo-log-parser
 scripts/build.sh                                  # a stamped binary in bin/
 bin/mongo-log-parser /path/to/bundle              # the overall report
 bin/mongo-log-parser coverage /path/to/bundle     # what the bundle holds, and its blind spots
@@ -74,3 +78,12 @@ Every rule, its signal, its bands and what it pairs with is laid out for review 
 tag and how far past it the tree is, or the baseline version and a fingerprint of the sources when
 there is no git. `mongo-log-parser version` prints it; pidba displays it, because a
 stale binary answers in the same format as a current one.
+
+Terminal charts use ASCII strokes and axes; tables use plain ASCII borders. Color is off by default
+(`--color never`). Explicit `--color auto` or `--color always` still enables styling where supported.
+Multiple series have distinct strokes and a legend; `. = gap` identifies missing data rather than zero.
+`~` marks a shortened display name or cell; full structured values remain in JSON.
+Names and log text retain their original characters. JSON data and metric calculations are unchanged.
+
+The label review workbook includes supporting-label conditions (`open_with`), signal thresholds,
+view/direction and a **Raw definitions** sheet containing every current definition as complete JSON.

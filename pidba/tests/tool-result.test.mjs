@@ -15,7 +15,7 @@ function pagesOf(result, store) {
   return { header, body };
 }
 
-test("model content is the parser's whole answer and terminal details keep the original", () => {
+test("model content contains structured evidence only and terminal details keep the original", () => {
   const report = {
     command: "report", bundle: "/local/case",
     data: { first_at: "2026-10-09T10:00:00Z", count: 17, value: 0.125,
@@ -27,13 +27,43 @@ test("model content is the parser's whole answer and terminal details keep the o
   const evidence = JSON.parse(result.content[0].text);
   assert.deepEqual(evidence.data, report.data);
   assert.equal(evidence.bundle_revision, 3);
-  assert.equal(evidence.render, report.render);
+  assert.equal(Object.hasOwn(evidence, "render"), false);
+  assert.ok(!result.content[0].text.includes("Shell-only context"));
   assert.equal(evidence.evidence_policy, report.evidence_policy);
   assert.equal(result.details.data, report);
   assert.equal(evidence.bundle, undefined);
 });
 
-test("a large answer is paged, and the pages joined are every byte of it", () => {
+test("structured metadata and array results survive paging without render", () => {
+  const report = { command: "label", bundle: "/case", render: "terminal-only",
+    notes: ["node B: required metric absent", "node A: chunk could not be decoded"],
+    future_metadata: { coverage: "partial" },
+    data: [{ label: "tickets.read.empty", source: "node A", instance: "read",
+      rule: { bands: [0, 1] }, buckets: [{ samples: 1, min: 0, max: 0 }],
+      details: "🙂".repeat(20000) }] };
+  const store = new ResultPages();
+  const { body } = pagesOf(parserResult(report, 5, MIN_PAGE_BYTES, store), store);
+  const evidence = JSON.parse(body);
+  assert.deepEqual(evidence.data, report.data);
+  assert.deepEqual(evidence.notes, report.notes);
+  assert.deepEqual(evidence.future_metadata, report.future_metadata);
+  assert.equal(evidence.bundle_revision, 5);
+  assert.equal(Object.hasOwn(evidence, "render"), false);
+  assert.equal(Object.hasOwn(evidence, "bundle"), false);
+});
+
+test("large terminal render does not force model pagination", () => {
+  const report = { command: "metrics", bundle: "/case", data: { count: 1 },
+    render: "terminal-only chart\n".repeat(MIN_PAGE_BYTES) };
+  const result = parserResult(report, 1, MIN_PAGE_BYTES, new ResultPages());
+  const evidence = JSON.parse(result.content[0].text);
+  assert.equal(evidence.paged_result, undefined);
+  assert.deepEqual(evidence.data, report.data);
+  assert.equal(Object.hasOwn(evidence, "render"), false);
+  assert.equal(result.details.data.render, report.render);
+});
+
+test("large structured evidence is paged without losing any bytes", () => {
   const report = { command: "report", bundle: "/case", render: "table 🙂\n".repeat(20000), data: {
     rules: Array.from({ length: 91 }, () => ({ doc: "definition".repeat(1000) })),
     slow_queries: Array.from({ length: 200 }, (_, i) => ({ ns: `app.c${i}`, count: i === 199 ? 1 : 1000,
@@ -79,12 +109,12 @@ test("asking for a page that is not there says which pages are", () => {
 // A real report from the parser (mongo-log-parser/internal/cli/agentfixture_test.go writes it).
 const parserReport = JSON.parse(readFileSync(new URL("./fixtures/parser-report.json", import.meta.url), "utf8"));
 
-test("a real parser report reaches the model field for field, at any page size", () => {
+test("a real parser report preserves structured fields and excludes render at any page size", () => {
   for (const size of [MIN_PAGE_BYTES, MAX_PAGE_BYTES]) {
     const store = new ResultPages();
     const { body } = pagesOf(parserResult(parserReport, 1, size, store), store);
     const evidence = JSON.parse(body);
     assert.deepEqual(evidence.data, parserReport.data);
-    assert.equal(evidence.render, parserReport.render);
+    assert.equal(Object.hasOwn(evidence, "render"), false);
   }
 });

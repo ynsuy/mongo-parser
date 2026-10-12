@@ -190,12 +190,12 @@ func gridNameCell(bySource map[string]series.Series, sources []string, width int
 	}
 	marker, style := "  ", plain
 	if selected {
-		marker, style = "▸ ", bold
+		marker, style = "> ", bold
 	}
 	return []string{
 		marker + Fit(nameOf(any), max(1, width-2), AlignTail),
 		"  " + any.Kind(),
-		"  " + Amount(lo, any.Unit) + " – " + Amount(hi, any.Unit),
+		"  " + Amount(lo, any.Unit) + " - " + Amount(hi, any.Unit),
 	}, []ansi{style, dim, dim}
 }
 
@@ -215,10 +215,10 @@ func gridPanel(row series.Series, width, height, slots int, lo, hi, first, last 
 	plot := plotStrokes(row, slots, height, lo, hi, first, last, pen)
 	lines := make([]string, 0, height+2)
 	for line, label := range labels {
-		lines = append(lines, Fit(label, gutter, AlignRight)+" ┤"+plot[line])
+		lines = append(lines, Fit(label, gutter, AlignRight)+" |"+plot[line])
 	}
 	drawn := len([]rune(plot[0]))
-	lines = append(lines, strings.Repeat(" ", gutter)+" └"+strings.Repeat("─", drawn))
+	lines = append(lines, strings.Repeat(" ", gutter)+" +"+strings.Repeat("-", drawn))
 	return append(lines, Fit(panelStats(row, width), width, AlignLeft))
 }
 

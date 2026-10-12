@@ -294,21 +294,26 @@ func runIngest(root string, args []string) error {
 
 // envelope is the shape of every --json answer: what was asked, of what, and the answer.
 type envelope struct {
-	Command        string `json:"command"`
-	Bundle         string `json:"bundle"`
-	Data           any    `json:"data"`
-	EvidencePolicy string `json:"evidence_policy"`
+	Command        string   `json:"command"`
+	Bundle         string   `json:"bundle"`
+	Data           any      `json:"data"`
+	EvidencePolicy string   `json:"evidence_policy"`
+	Notes          []string `json:"notes,omitempty"`
 	// Render is the same answer drawn as text. A caller that has to show the answer to a person —
 	// an agent relaying it, a ticket being written — would otherwise redraw the tables and charts
 	// this tool already knows how to draw, and draw them differently every time.
 	Render string `json:"render"`
 }
 
-func emit(w io.Writer, asJSON bool, command, root string, data any, text string) error {
+func emit(w io.Writer, asJSON bool, command, root string, data any, text string, notes ...[]string) error {
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(envelope{Command: command, Bundle: root, Data: data, EvidencePolicy: evidencePolicy, Render: strings.TrimRight(text, "\n")})
+		var combined []string
+		for _, group := range notes {
+			combined = append(combined, group...)
+		}
+		return enc.Encode(envelope{Notes: combined, Command: command, Bundle: root, Data: data, EvidencePolicy: evidencePolicy, Render: strings.TrimRight(text, "\n")})
 	}
 	_, err := fmt.Fprintln(w, strings.TrimRight(text, "\n"))
 	return err

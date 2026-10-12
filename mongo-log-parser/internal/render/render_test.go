@@ -214,7 +214,7 @@ func TestTimeRulerTicksOnRoundIntervals(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("ruler drew %d lines, want a rule and its labels", len(lines))
 	}
-	if !strings.Contains(lines[0], "┴") {
+	if !strings.Contains(lines[0], "+") {
 		t.Errorf("the rule has no ticks: %q", lines[0])
 	}
 	// Twenty hours over a hundred and twenty columns wants a tick every three hours or so, and
@@ -286,13 +286,13 @@ func TestLinesAreToldApartByColourWhenThereIsColour(t *testing.T) {
 
 	// One glyph set in colour: nothing from any other pen reaches the chart.
 	for _, pen := range strokeSets[1:] {
-		if strings.ContainsRune(colored, pen.flat) {
+		if strings.ContainsRune(strings.Join(plotRowsOf(colored), "\n"), pen.flat) {
 			t.Errorf("a coloured panel drew a second dash pattern %q:\n%s", string(pen.flat), colored)
 		}
 	}
 	// And no marks, because the colour already says it.
 	for _, mark := range []rune{panelMarks(false).level, panelMarks(false).cross} {
-		if strings.ContainsRune(colored, mark) {
+		if strings.ContainsRune(strings.Join(plotRowsOf(colored), "\n"), mark) {
 			t.Errorf("a coloured panel drew the mark %q instead of alternating:\n%s", string(mark), colored)
 		}
 	}
@@ -331,7 +331,7 @@ func TestPanelNamesItsColumnAndItsScale(t *testing.T) {
 	if !strings.Contains(out, "/col") {
 		t.Errorf("the panel does not say what a column is worth:\n%s", out)
 	}
-	if !strings.Contains(out, "–") {
+	if !strings.Contains(out, "-") {
 		t.Errorf("the panel does not say what its axis covers:\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
@@ -354,7 +354,7 @@ func TestOwnPeakChangesThePanelButNotTheFigures(t *testing.T) {
 	if shared == own {
 		t.Fatal("the own-peak reading drew the same panel as the shared axis")
 	}
-	if !strings.Contains(shared, "0 – 1.0k") {
+	if !strings.Contains(shared, "0 - 1.0k") {
 		t.Errorf("the shared axis does not name its range:\n%s", shared)
 	}
 	if !strings.Contains(own, "each to its own peak") {
@@ -377,7 +377,7 @@ func TestOwnPeakChangesThePanelButNotTheFigures(t *testing.T) {
 func plotRowsOf(panel string) []string {
 	out := make([]string, 0, 8)
 	for _, line := range strings.Split(panel, "\n") {
-		if strings.Contains(line, "┤") {
+		if regexp.MustCompile(`^\s*-?\d+(?:\.\d+)?(?:[A-Za-z/]+)? \|`).MatchString(line) {
 			out = append(out, line)
 		}
 	}
@@ -395,11 +395,11 @@ func TestAxisIgnoresASampleTheChartCannotDraw(t *testing.T) {
 	row.Buckets[1].Min = -30
 	row.Label = "in cache"
 	out := MetricPanel([]series.Series{row}, PanelOptions{Width: 80, Height: 5, Title: "Cache"})
-	if !strings.Contains(out, "0 – 54.0") {
+	if !strings.Contains(out, "0 - 54.0") {
 		t.Errorf("the axis does not read from zero:\n%s", out)
 	}
 	for _, line := range plotRowsOf(out) {
-		if strings.Contains(line, "-") && strings.Contains(line, "┤") && strings.HasPrefix(strings.TrimSpace(line), "-") {
+		if strings.Contains(line, "-") && strings.Contains(line, "|") && strings.HasPrefix(strings.TrimSpace(line), "-") {
 			t.Errorf("the axis carries a negative label for data that is never negative:\n%s", out)
 		}
 	}
@@ -499,7 +499,7 @@ func TestEmptyInputs(t *testing.T) {
 		t.Errorf("empty report: %q", got)
 	}
 	empty := series.Series{Metric: "serverStatus/x", Mode: "gauge", Source: "node-a"}
-	want := "serverStatus.x | gauge | 1 source\n── node-a\nNo samples in this window."
+	want := "serverStatus.x | gauge | 1 source\n-- node-a\nNo samples in this window."
 	if got := MetricOverlay([]series.Series{empty}, OverlayOptions{Width: 80, Height: 9, Color: false}); got != want {
 		t.Errorf("empty chart: %q", got)
 	}
@@ -600,7 +600,7 @@ func TestBytePanelIsBinaryThroughout(t *testing.T) {
 	configured.Label, configured.Unit = "configured", series.UnitBytes
 
 	out := MetricPanel([]series.Series{cache, configured}, PanelOptions{Width: 100, Height: 5, Title: "Cache"})
-	for _, want := range []string{"0 – 64.0Gi", "in cache 42.0Gi", "configured 64.0Gi"} {
+	for _, want := range []string{"0 - 64.0Gi", "in cache 42.0Gi", "configured 64.0Gi"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the panel does not carry %q:\n%s", want, out)
 		}
@@ -613,7 +613,7 @@ func TestBytePanelIsBinaryThroughout(t *testing.T) {
 	queue := sampleSeries("node-a", "serverStatus/globalLock/currentQueue/total", 0, 4, 120, 8)
 	queue.Label = "queued"
 	mixed := MetricPanel([]series.Series{cache, queue}, PanelOptions{Width: 100, Height: 5, Title: "Mixed"})
-	if strings.Contains(mixed, "– 45.1Gi") || strings.Contains(mixed, "– 42.0Gi") {
+	if strings.Contains(mixed, "- 45.1Gi") || strings.Contains(mixed, "- 42.0Gi") {
 		t.Errorf("a mixed-unit panel labelled its axis in one line's unit:\n%s", mixed)
 	}
 	// The lines still carry their own units in the legend, where each figure belongs to one series.
@@ -623,7 +623,7 @@ func TestBytePanelIsBinaryThroughout(t *testing.T) {
 }
 
 // A table cuts the column that has room to lose, not the one that happens to be first. A Severity
-// column cut to "criti…" loses everything it says; the sentence beside it can spare the characters.
+// column cut to "criti~" loses everything it says; the sentence beside it can spare the characters.
 func TestElasticColumnGivesUpTheWidth(t *testing.T) {
 	long := strings.Repeat("x", 200)
 	columns := []Column{
@@ -695,5 +695,35 @@ func TestBandNeverFillsInAnAbsence(t *testing.T) {
 	line := strings.SplitN(Band([]BandGroup{{Rows: rows}}, options), "\n", 2)[0]
 	if cells := strings.TrimSpace(line[24:]); cells != "PPPPPP.........." {
 		t.Errorf("band drew %q, want PPPPPP..........", cells)
+	}
+}
+
+// ASCII drawing must retain missing buckets and distinguish the series without relying on color.
+func TestPlainChartsAndTablesUseASCIIAndPreserveInputText(t *testing.T) {
+	rows := []series.Series{sampleSeries("node-a", "serverStatus/x", 0, 1, 9, 3), sampleSeries("node-b", "serverStatus/x", 0, 3, 2, 7)}
+	for name, output := range map[string]string{
+		"report":  MetricsReport(rows, ReportOptions{Width: 100, ChartHeight: 5}),
+		"overlay": MetricOverlay(rows, OverlayOptions{Width: 100, Height: 5}),
+		"panel":   MetricPanel(rows, PanelOptions{Width: 100, Height: 5, Title: "Metrics"}),
+		"grid":    MetricGrid(rows, GridOptions{Width: 100, ChartHeight: 5, Selected: -1}),
+		"table":   Table([]Column{{Title: "Node", Values: []string{"node-a"}}}, TableOptions{Width: 80}),
+	} {
+		for _, r := range output {
+			if r > 127 || r == 27 {
+				t.Fatalf("%s has non-ASCII drawing or escape: %q", name, output)
+			}
+		}
+	}
+	pens := map[rune]bool{}
+	for _, pen := range strokeSets {
+		if pen.flat == gapMark || pens[pen.flat] {
+			t.Fatalf("ambiguous ASCII series marker: %q", pen.flat)
+		}
+		pens[pen.flat] = true
+	}
+	text := "müşteri-节点"
+	output := Table([]Column{{Title: "Node", Values: []string{text}}}, TableOptions{Width: 80})
+	if !strings.Contains(output, text) {
+		t.Fatalf("input text changed: %q", output)
 	}
 }

@@ -25,22 +25,61 @@ and review priorities are navigation, not incident severity. Unlabelled or missi
 unknown. The analyst or AI evaluates hypotheses using node/time-aligned evidence and states what
 cannot be established; neither an isolated maximum nor a dominant logged wait establishes cause.
 
-## Use it
+## Install and run
 
-Build the parser (Go 1.26 or later):
+Use macOS, Linux, or Windows through WSL with Bash. Install Git and Go 1.26 or later.
+For PIDBA, also install Node.js 22.19.0 or later and npm. The first build/install needs internet
+access to download Go and npm dependencies; you do not need a running MongoDB server.
 
 ```bash
-mongo-log-parser/scripts/build.sh          # bin/mongo-log-parser, stamped with its version
-B=mongo-log-parser/bin/mongo-log-parser
-$B coverage /path/to/bundle                # what the bundle holds, and its blind spots
-$B /path/to/bundle                         # the report: what was running, what the labels saw, …
-$B label /path/to/bundle tickets.read.empty --source rs0-1
-$B label /path/to/bundle tickets.read.empty --source rs0-1 --at 10:00:00 --span 2m
-$B labels                                  # the rule book
+git clone https://github.com/ynsuy/pidba.git
+cd pidba
 ```
 
-**From Pi**, `pidba/scripts/pidba` starts an agent whose only tools are the parser's commands; see
-`pidba/README.md`.
+### Parser only
+
+The parser runs locally and needs no model account, API key, Node.js, or Ollama:
+
+```bash
+./mongo-log-parser/scripts/build.sh
+./mongo-log-parser/bin/mongo-log-parser --version
+./mongo-log-parser/bin/mongo-log-parser coverage "/path/to/bundle"
+./mongo-log-parser/bin/mongo-log-parser "/path/to/bundle"
+./mongo-log-parser/bin/mongo-log-parser labels
+```
+
+Terminal charts and table borders use ASCII, with colors off by default. Missing samples are shown
+as gaps. `--json` returns structured data plus a `render` field for terminal presentation.
+Open a reported label with its exact node name:
+
+```bash
+./mongo-log-parser/bin/mongo-log-parser label "/path/to/bundle" tickets.read.empty --source rs0-1
+./mongo-log-parser/bin/mongo-log-parser label "/path/to/bundle" tickets.read.empty --source rs0-1 --at 10:00:00 --span 2m
+```
+
+### PIDBA terminal agent
+
+From the repository root, install the locked dependencies and start the launcher:
+
+```bash
+npm --prefix pidba ci
+./pidba/scripts/pidba --version
+./pidba/scripts/pidba
+```
+
+The launcher builds the parser automatically. On first use, type `/login`, select **OpenAI Codex**,
+and complete sign-in with an account that has access. Then enter a problem and your bundle path,
+for example `Investigate query latency in "/path/to/bundle"`. You can also launch with
+`./pidba/scripts/pidba "/path/to/bundle"`. See [PIDBA setup and tools](pidba/README.md).
+
+PIDBA sends structured parser results and your messages to the selected model. Tables and charts
+stay in the terminal; the model can support its answers with ASCII charts or tables based on JSON.
+Operational names, query commands and log text are not masked. The parser-only commands above
+analyze locally without model requests.
+
+The [label review workbook](docs/labels-review.xlsx) contains 74 label names across 91 definitions,
+including version ranges, bands, thresholds, supporting-label conditions and complete raw JSON.
+Python is needed only if you want to regenerate that workbook, not to use the parser or PIDBA.
 
 ## Develop
 
@@ -48,7 +87,11 @@ $B labels                                  # the rule book
 (cd mongo-log-parser && go vet ./... && go test ./...)
 (cd pidba && npm ci && npm run verify)
 (cd mongo-log-parser && DBA_FTDC_DIR=/path/to/diagnostic.data go test ./internal/label -run TestRulesReadPathsTheServerWrites)
-python3 mongo-log-parser/scripts/labels-review.py   # regenerate docs/labels-review.xlsx (needs openpyxl)
+# Optional: regenerate the Excel workbook from a freshly built parser.
+python3 -m venv /tmp/pidba-labels-venv
+/tmp/pidba-labels-venv/bin/pip install openpyxl
+./mongo-log-parser/scripts/build.sh
+/tmp/pidba-labels-venv/bin/python mongo-log-parser/scripts/labels-review.py
 ```
 
 The last test checks that every rule reads FTDC paths a real capture carries; run it against a

@@ -29,7 +29,7 @@ func runSlow(root string, args []string) error {
 	waitedOn := flags.String("waited-on", "", "only the shapes whose biggest wait is this, e.g. \"write concern\"")
 	failed := flags.Bool("failed", false, "only the shapes the server rejected at least once")
 	errName := flags.String("error", "", "only the shapes that failed with this error, e.g. StaleConfig")
-	color := flags.String("color", "auto", "auto, always or never")
+	color := flags.String("color", "never", "never (default), auto or always")
 	if err := parseOnly(flags, args); err != nil {
 		return err
 	}

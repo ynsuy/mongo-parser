@@ -28,7 +28,7 @@ func runReport(root string, args []string) error {
 	w := addWindowFlags(fs)
 	only := fs.String("only", "", "comma-separated sections to print: "+strings.Join(reportSections, ", "))
 	noChart := fs.Bool("no-chart", false, "leave out the log activity chart")
-	color := fs.String("color", "auto", "auto, always or never")
+	color := fs.String("color", "never", "never (default), auto or always")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}

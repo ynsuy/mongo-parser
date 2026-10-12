@@ -28,11 +28,11 @@ func axisChart(row series.Series, width, height int, lo, hi float64, fixedGutter
 	plot := plotInto(row, max(8, width-gutter-2), height, lo, hi, first, last)
 	out := make([]string, 0, height+2)
 	for line, label := range labels {
-		out = append(out, Fit(label, gutter, AlignRight)+" ┤"+plot[line])
+		out = append(out, Fit(label, gutter, AlignRight)+" |"+plot[line])
 	}
 	slots := utf8.RuneCountInString(plot[0])
 	return append(out,
-		strings.Repeat(" ", gutter)+" └"+strings.Repeat("─", slots),
+		strings.Repeat(" ", gutter)+" +"+strings.Repeat("-", slots),
 		strings.Repeat(" ", gutter+2)+windowTicks(first, last, row.BucketSeconds, slots))
 }
 
@@ -57,10 +57,10 @@ var rulerSteps = []time.Duration{
 // events is readable instead of estimated.
 func TimeRuler(first, last float64, columns int) []string {
 	columns = max(8, columns)
-	rule := []rune(strings.Repeat("─", columns))
+	rule := []rune(strings.Repeat("-", columns))
 	labels := []rune(strings.Repeat(" ", columns))
 	if !(last > first) {
-		return []string{"└" + string(rule), string(labels)}
+		return []string{"+" + string(rule), string(labels)}
 	}
 
 	span := time.Duration(last-first) * time.Millisecond
@@ -95,7 +95,7 @@ func TimeRuler(first, last float64, columns int) []string {
 		if column < 0 || column >= columns {
 			continue
 		}
-		rule[column] = '┴'
+		rule[column] = '+'
 		text := []rune(at.Format(layout))
 		// Labels are hung from their tick and skipped rather than overlapped: a clipped clock
 		// reading is worse than no reading at the tick beside it.
@@ -109,7 +109,7 @@ func TimeRuler(first, last float64, columns int) []string {
 		copy(labels[from:], text)
 		written = from + len(text)
 	}
-	return []string{"└" + string(rule), " " + string(labels)}
+	return []string{"+" + string(rule), " " + string(labels)}
 }
 
 // WindowAxis is the reading at each end of a window a caller already knows, for a screen whose
@@ -210,7 +210,7 @@ func timeTicks(row series.Series, slots int) string {
 
 // gapMark is what a bin with no sample is drawn as: a dot on the floor. A node that stopped
 // reporting must not look like a node that went quiet.
-const gapMark = '·'
+const gapMark = '.'
 
 // strokes is the set of glyphs one series is drawn with.
 //
@@ -233,14 +233,14 @@ type strokes struct {
 // update, delete, getmore and command. A set that wrapped gave two of them the same glyph, and the
 // legend then had two entries a reader could not tell apart without colour.
 var strokeSets = []strokes{
-	{'─', '│', '╭', '╯', '╮', '╰'},
-	{'━', '┃', '┏', '┛', '┓', '┗'},
-	{'═', '║', '╔', '╝', '╗', '╚'},
-	{'╌', '╎', '╭', '╯', '╮', '╰'},
-	{'╍', '╏', '┏', '┛', '┓', '┗'},
-	{'┄', '┆', '╭', '╯', '╮', '╰'},
-	{'┅', '┇', '┏', '┛', '┓', '┗'},
-	{'┈', '┊', '╭', '╯', '╮', '╰'},
+	{'-', '|', '+', '+', '+', '+'},
+	{'=', '!', '!', '!', '!', '!'},
+	{'~', ':', ':', ':', ':', ':'},
+	{':', ':', ':', ':', ':', ':'},
+	{'*', '*', '*', '*', '*', '*'},
+	{'#', '#', '#', '#', '#', '#'},
+	{'%', '%', '%', '%', '%', '%'},
+	{'@', '@', '@', '@', '@', '@'},
 }
 
 // strokesFor is the glyph set the nth series on a chart is drawn with.
