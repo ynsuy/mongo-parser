@@ -1,6 +1,0 @@
-{
-  "name": "mongo-bundle",
-  "version": "0.1.0",
-  "description": "Investigate an offline MongoDB support bundle (logs, FTDC, shell printouts) with the mongo-log-parser binary, narrowing from labels to seconds to log lines.",
-  "author": { "name": "Yunus Uyanik" }
-}

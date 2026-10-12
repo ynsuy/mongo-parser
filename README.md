@@ -6,7 +6,6 @@ metric of every node did to the seconds and log lines behind the one that matter
 
 ```text
 mongo-log-parser/   the Go tool that does all the reading: labels, the funnel, the log analysis
-plugin/             a Claude Code plugin whose skill drives the tool
 pidba/              a Pi terminal agent that drives the tool with no shell of its own
 docs/               labels-review.xlsx, every label rule laid out for review
 ```
@@ -40,14 +39,6 @@ $B label /path/to/bundle tickets.read.empty --source rs0-1 --at 10:00:00 --span 
 $B labels                                  # the rule book
 ```
 
-**From Claude Code**, add this repository as a marketplace and install the plugin; its skill walks
-the same funnel and expects `mongo-log-parser` on `PATH` (or built as above):
-
-```text
-/plugin marketplace add ynsuy/pidba
-/plugin install mongo-bundle@psb-mongo-analyzer
-```
-
 **From Pi**, `pidba/scripts/pidba` starts an agent whose only tools are the parser's commands; see
 `pidba/README.md`.
 
@@ -62,4 +53,4 @@ python3 mongo-log-parser/scripts/labels-review.py   # regenerate docs/labels-rev
 
 The last test checks that every rule reads FTDC paths a real capture carries; run it against a
 capture of each server version a rule changes for. The parser is versioned by tags named
-`mongo-log-parser/vX.Y.Z`; pidba by its `package.json`; the plugin by `plugin/.claude-plugin/plugin.json`.
+`mongo-log-parser/vX.Y.Z`; pidba by its `package.json`.
