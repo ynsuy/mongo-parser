@@ -128,7 +128,7 @@ func runReport(root string, args []string) error {
 		footer = strings.Join(streamFailures, "; ") + "\n" + footer
 	}
 	data := map[string]any{
-		"slow_queries": shapes, "log_groups": logGroups,
+		"slow_queries": reportShapes(shapes, root), "log_groups": logGroups,
 		"nodes": nodes, "migrations": cluster.Migrations(), "processes": processes,
 		"deployment_summary": deployment.Summarize(), "index_builds": catalogue.Builds(),
 		"catalogue_changes": catalogue.Changes(), "signals": health.Signals(), "activity": activity,
@@ -440,4 +440,65 @@ func renderFTDCProcesses(found []ftdcProcess, options render.TableOptions) strin
 			return fmt.Sprintf("%gG", p.CacheGiB)
 		})},
 	}, options)
+}
+
+// reportShape is a slow query shape as the overall report gives it: when it ran is summed up in two
+// numbers rather than listed minute by minute. A shape that ran all week has thousands of minutes,
+// and every shape's list together made the report megabytes — most of it a history nobody asked
+// for yet. The count of minutes and the worst of them still tell a steady drip from one bad
+// stretch; slow, narrowed to the shape, gives every minute.
+type reportShape struct {
+	analyze.Shape
+	Timeline      analyze.Timeline `json:"timeline,omitempty"` // left out: slow --query-hash gives it
+	ActiveMinutes int              `json:"active_minutes"`
+	BusiestMinute *busiestMinute   `json:"busiest_minute,omitempty"`
+	// Next is the command that gives this shape's every minute.
+	Next string `json:"next,omitempty"`
+}
+
+// busiestMinute is the minute a shape cost the most server time in.
+type busiestMinute struct {
+	At     time.Time `json:"at"`
+	Count  int       `json:"count"`
+	Millis float64   `json:"millis"`
+	MaxMs  float64   `json:"max_ms"`
+}
+
+func reportShapes(shapes []analyze.Shape, root string) []reportShape {
+	out := make([]reportShape, len(shapes))
+	for i, shape := range shapes {
+		r := reportShape{Shape: shape, ActiveMinutes: len(shape.Timeline)}
+		var worst int64
+		for at, bin := range shape.Timeline {
+			if r.BusiestMinute == nil || bin.Millis > r.BusiestMinute.Millis || (bin.Millis == r.BusiestMinute.Millis && at < worst) {
+				worst = at
+				r.BusiestMinute = &busiestMinute{At: time.Unix(at, 0).UTC(), Count: bin.Count, Millis: bin.Millis, MaxMs: bin.Max}
+			}
+		}
+		r.Next = slowCommand(root, shape)
+		out[i] = r
+	}
+	return out
+}
+
+// slowCommand narrows slow to one shape: by its hash when the server logged one, by what it ran
+// against and how otherwise.
+func slowCommand(root string, shape analyze.Shape) string {
+	command := "mongo-log-parser slow " + root
+	switch {
+	case shape.QueryHash != "":
+		return command + " --query-hash " + shape.QueryHash
+	case shape.PlanCacheShapeHash != "":
+		return command + " --query-hash " + shape.PlanCacheShapeHash
+	}
+	if shape.Namespace != "" {
+		command += " --ns " + shape.Namespace
+	}
+	if shape.Operation != "" {
+		command += " --op " + shape.Operation
+	}
+	if shape.Plan != "" {
+		command += " --plan " + shape.Plan
+	}
+	return command
 }
