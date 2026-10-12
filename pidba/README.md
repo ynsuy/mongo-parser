@@ -160,9 +160,10 @@ Structured `notes` preserve unavailable-label reasons and FTDC decode warnings e
 their scope; paging preserves all returned JSON, not every raw record in the bundle.
 
 Parser tool calls run sequentially to protect the shared cache during its first ingest. Tool errors
-show the parser's actual diagnostic instead of only `failed`. RCA answers use numbered short paragraphs that combine observations and interpretation,
-with one overall assessment at the bottom. A finding about a label that changed gets a bar chart
-beneath the paragraph; tables appear on request. `mongo_label` with `chart:true` returns the exact
-derived `signal_series` for these charts. Writing follows
-short sentences and plain words, adapted from [SimpleEnglish](https://github.com/AminBlg/SimpleEnglish),
-while retaining the user's language, exact evidence and uncertainty about causes.
+show the parser's actual diagnostic instead of only `failed`.
+
+RCA answers lead with the main assessment, then explain it with selective time charts and compact
+parser-backed evidence tables. Supporting findings retain the open/notice inventory without giving
+every metric equal space. Headings, depth and ordering follow the user's question and language;
+node aliases are introduced with their full names.
+`mongo_label` with `chart:true` returns the exact derived `signal_series` used for label charts.

@@ -46,18 +46,17 @@ test("visual reporting uses structured values in bar charts and preserves eviden
   }
 });
 
-test("numbered RCA paragraphs combine interpretation and use exact label signal charts", () => {
+test("incident reports lead with assessment, tables and selective evidence charts", () => {
   const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
   for (const text of [prompt, skill]) {
-    for (const requirement of ["numbered short paragraphs", "the overall-assessment label\nincluded", "is not a reason to switch languages", "Do not add separate",
-      "rather than dropping findings", "Use tables only when the user asks", "directly beneath", "signal_series", "chart:true",
-      "at most 25 words", "Keep exact metric IDs", "408 s", "node names in full", "gather the rest in the overall assessment", "not by its total alone", "p95_approx",
-      "gets a bar chart directly beneath", "mark\nhypotheses as hypotheses",
-      "A tool failure is not an empty result"])
+    for (const requirement of ["Lead an incident report with the best-supported assessment",
+      "Use descriptive headings", "Use tables by default", "Keep charts selective",
+      "complete open/notice", "signal_series", "chart:true", "not by its total alone",
+      "p95_approx", "mark hypotheses as hypotheses", "A tool failure is not an empty result",
+      "explicit unambiguous alias", "that is not a reason to switch languages"])
       assert.ok(text.includes(requirement), `Missing answer requirement: ${requirement}`);
-    assert.ok(!text.includes("3-6 flat bullets"));
-    assert.ok(!text.includes("Keep charts selective"), "optional charts are skipped");
-    assert.ok(!text.includes("Genel değerlendirme:"), "a fixed Turkish label is copied into English answers");
-    assert.ok(!text.includes("put it in a\ncompact table"));
+    for (const obsolete of ["Use tables only", "gets a bar chart directly beneath",
+      "Start directly with the findings", "Aim for at most 25 words", "Write node names in full every"])
+      assert.ok(!text.includes(obsolete), `Obsolete formatting constraint: ${obsolete}`);
   }
 });

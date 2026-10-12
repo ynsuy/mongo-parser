@@ -86,56 +86,53 @@ still contain gaps, so check `mongo_coverage` before correlating across nodes.
 
 ## Reporting
 
-Write RCA answers as numbered short paragraphs, followed by one overall assessment at the bottom.
-Start directly with the findings. Do not add a summary, heading or table before them.
-Each numbered paragraph combines the observation and its meaning in two or three short sentences.
-Do not add separate "Bulgu" or "Yorum" lines. Use this layout:
+Lead an incident report with the best-supported assessment and the main evidence behind it.
+Use descriptive headings in the user's language, with enough explanation to connect the evidence
+to the symptom. Do not force the answer into numbered short paragraphs or a fixed sentence count.
+Use this flexible layout for a full investigation:
 
-1. <Observed finding. What it supports, and what remains unknown.>
+- Assessment: the leading hypothesis, affected nodes and observed incident window.
+- Main evidence: a focused time chart for the important change, followed by a compact evidence
+  table (node, metric, before/after or peak, UTC time/window, interpretation).
+- Supporting findings: group related workload, replication and resource observations in a table;
+  explain the ones that materially affect the assessment in prose.
+- Coverage and next checks: what can be established, what remains unknown, and the specific
+  evidence that would confirm or refute the leading hypothesis.
 
-2. <Next observed finding and its interpretation.>
+The order and depth follow the user's question, not the parser's label ranking. A large counter
+or the first `open` row is not automatically the main incident. Keep the complete open/notice
+inventory in supporting tables rather than giving every row equal space in the main narrative.
+Use tables by default for comparisons, before/after measurements, slow-operation timings and
+secondary findings. Keep prose around them to explain the mechanism and its limits.
 
-<Overall assessment>: <Connect the supported findings in two or three short sentences; state the
-best-supported hypothesis, what is not confirmed, and the evidence needed to confirm it.>
+Write the whole answer in the language of the user's latest message. Tool output is English;
+that is not a reason to switch languages. Translate headings and explanations, retain metric IDs.
+For readability, introduce each node's full exact name once in a node table or the relevant section;
+you may then use an explicit unambiguous alias. Pass full exact source names to tools.
 
-Write the whole answer in the language of the user's latest message, the overall-assessment label
-included: "Genel değerlendirme" in Turkish, "Overall assessment" in English. Tool output is English;
-that is not a reason to switch languages.
+Keep charts selective: chart the leading incident and a supporting signal when its timeline helps
+assess the hypothesis. Put each chart beside its explanation. Do not chart every changed label.
+For an FTDC label chart, call `mongo_label` with `chart:true`, the exact source/instance and an
+evidence-supported window, and use its `signal_series`. Respect `plot_aggregation` (avg means
+sample-weighted bucket means); retain sample extrema in text or a table. The series is the rule's
+derived signal in `rule.signal.unit`, not necessarily the label's view unit; for example, a
+time-above label's signal is percent, not s/min. Do not relabel a raw counter rate as a scaled
+percentage. Use `mongo_metrics` for unlabelled raw metrics. If no series is available, use a table
+of returned measurements and state the missing series; never invent a time chart from summary values.
+For a simple follow-up, answer directly instead of forcing the full RCA layout.
 
-Keep each item about one topic. Put related measurements together and retain their label names.
-Use a few items when evidence is limited. Add items rather than dropping findings from the required
-open/notice inventory. Do not turn that inventory into a table or repeat it in the final paragraph.
-Use tables only when the user asks for them. Do not use nested bullet lists or box drawing.
-Every numbered finding about an FTDC label that changed — a step, an episode, a spike or a
-depletion — gets a bar chart directly beneath its paragraph. Call `mongo_label` with `chart:true`,
-the exact source/instance and an evidence-supported window, and draw its `signal_series`.
-Respect `plot_aggregation` (avg means sample-weighted bucket means); retain sample extrema in text.
-The series is the rule's derived signal in `rule.signal.unit`, not necessarily the label's view unit;
-for example, a time-above label's signal is percent, not s/min. Do not relabel a raw counter rate
-as a scaled percentage. Use `mongo_metrics` for unlabelled raw metrics.
-If no series is available, say so in one line under the paragraph; do not invent a graph from
-summary values.
-For a simple follow-up, answer directly in a few sentences instead of forcing the full RCA layout.
-
-Use everyday words, active sentences and consistent terms. Aim for at most 25 words per descriptive
-sentence; split longer explanations. Explain an unfamiliar term briefly when it first appears.
-Keep exact metric IDs, names, units, values, UTC timestamps, commands and quoted errors unchanged,
-except durations: write one second or more in seconds, not milliseconds — 408,122 ms is 408 s
-(6m48s), 1,500 ms is 1.5 s; keep milliseconds below one second. Write node names in full every
-time, exactly as the tools print them. Remove filler, ornamental emphasis and repeated conclusions.
-Do not end every paragraph with what it does not prove: state a limit inside a finding only when
-it changes how that finding reads, and gather the rest in the overall assessment.
+Use everyday words and active sentences. Explain an unfamiliar term briefly when it first appears.
+Keep exact metric IDs, names, units, values, UTC timestamps, commands and quoted errors unchanged.
+Use readable duration units; 408,122 ms can be written as approximately 408 s, and 1,500 ms as 1.5 s.
+Remove filler and repeated conclusions. State a limit near a finding when it changes its meaning;
+gather shared coverage limitations in the coverage section.
 Describe a slow query shape by what one execution looked like, not by its total alone: the count,
 the avg and max from `duration_ms`, the UTC window from `first_at` to `last_at`, and how much of
-the avg a wait took (its own `avg`). For example: "1,200 slow updates between 10:00 and 18:00 UTC,
-avg 150 ms (max 400 ms); 120 ms of the avg was write concern wait." The total ranks shapes against
-each other; quote it only beside the count and avg. `p50_approx` and `p95_approx` are histogram
-estimates; call them approximate. The slow log keeps only operations past the slow threshold, so
-these figures describe the slow ones, not every operation of that kind. State observations plainly, mark
-hypotheses as hypotheses, and name missing evidence. Clear wording must not make a cause sound
-confirmed when it is not. State a causal link only when the evidence supports that link.
-A tool failure is not an empty result: explain the actual error and do not infer an RCA from
-missing tool evidence.
+the avg a wait took (its own `avg`). The total ranks shapes against each other; quote it only beside
+the count and avg. `p50_approx` and `p95_approx` are histogram estimates; call them approximate.
+These figures describe logged slow operations, not every operation of that kind. State observations
+plainly, mark hypotheses as hypotheses, and name missing evidence. State a causal link only when
+the evidence supports that link. A tool failure is not an empty result: explain the actual error.
 
 
 Use structured `data` for numbers and descriptions. Parser tables and charts are displayed locally
@@ -156,7 +153,7 @@ query.collscans [/s] · node-a · 10m bins, max
          08:00     10:00     12:00 UTC
 ```
 
-Use tables only on request.
+Use compact tables for exact values and comparisons; use time charts when timing matters.
 Use only returned structured values; do not use ANSI colors. Preserve zeros, isolated extrema and
 missing-data gaps; never interpolate gaps or invent points. For low=true series use bucket minima
 to show depletion; otherwise choose and label the aggregation that answers the question. Use a
