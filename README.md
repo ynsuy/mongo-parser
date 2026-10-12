@@ -27,59 +27,31 @@ cannot be established; neither an isolated maximum nor a dominant logged wait es
 
 ## Install and run
 
-Use macOS, Linux, or Windows through WSL with Bash. Install Git and Go 1.26 or later.
-For PIDBA, also install Node.js 22.19.0 or later and npm. The first build/install needs internet
-access to download Go and npm dependencies; you do not need a running MongoDB server.
+Requires Git, Bash and Go 1.26+ (macOS, Linux or WSL). PIDBA also needs Node.js 22.19.0+ and npm.
 
 ```bash
 git clone https://github.com/ynsuy/pidba.git
 cd pidba
 ```
 
-### Parser only
-
-The parser runs locally and needs no model account, API key, Node.js, or Ollama:
-
-```bash
-./mongo-log-parser/scripts/build.sh
-./mongo-log-parser/bin/mongo-log-parser --version
-./mongo-log-parser/bin/mongo-log-parser coverage "/path/to/bundle"
-./mongo-log-parser/bin/mongo-log-parser "/path/to/bundle"
-./mongo-log-parser/bin/mongo-log-parser labels
-```
-
-Terminal charts and table borders use ASCII, with colors off by default. Missing samples are shown
-as gaps. `--json` returns structured data plus a `render` field for terminal presentation.
-Open a reported label with its exact node name:
-
-```bash
-./mongo-log-parser/bin/mongo-log-parser label "/path/to/bundle" tickets.read.empty --source rs0-1
-./mongo-log-parser/bin/mongo-log-parser label "/path/to/bundle" tickets.read.empty --source rs0-1 --at 10:00:00 --span 2m
-```
-
-### PIDBA terminal agent
-
-From the repository root, install the locked dependencies and start the launcher:
+**PIDBA** (builds the parser automatically):
 
 ```bash
 npm --prefix pidba ci
-./pidba/scripts/pidba --version
 ./pidba/scripts/pidba
 ```
 
-The launcher builds the parser automatically. On first use, type `/login`, select **OpenAI Codex**,
-and complete sign-in with an account that has access. Then enter a problem and your bundle path,
-for example `Investigate query latency in "/path/to/bundle"`. You can also launch with
-`./pidba/scripts/pidba "/path/to/bundle"`. See [PIDBA setup and tools](pidba/README.md).
+On first use: `/login` → **OpenAI Codex** → sign in. Then describe the problem with your bundle path.
+PIDBA sends your messages and structured results to the selected model without masking.
 
-PIDBA sends structured parser results and your messages to the selected model. Tables and charts
-stay in the terminal; the model can support its answers with ASCII charts or tables based on JSON.
-Operational names, query commands and log text are not masked. The parser-only commands above
-analyze locally without model requests.
+**Parser only** (local, no model account needed):
 
-The [label review workbook](docs/labels-review.xlsx) contains 74 label names across 91 definitions,
-including version ranges, bands, thresholds, supporting-label conditions and complete raw JSON.
-Python is needed only if you want to regenerate that workbook, not to use the parser or PIDBA.
+```bash
+./mongo-log-parser/scripts/build.sh
+./mongo-log-parser/bin/mongo-log-parser "/path/to/bundle"
+```
+
+More: [PIDBA](pidba/README.md), [parser](mongo-log-parser/README.md), [label workbook](docs/labels-review.xlsx).
 
 ## Develop
 

@@ -9,11 +9,8 @@ Requires Go 1.26+ and Bash on macOS, Linux, or WSL. From a fresh clone, enter th
 ```bash
 git clone https://github.com/ynsuy/pidba.git
 cd pidba/mongo-log-parser
-scripts/build.sh                                  # a stamped binary in bin/
-bin/mongo-log-parser /path/to/bundle              # the overall report
-bin/mongo-log-parser coverage /path/to/bundle     # what the bundle holds, and its blind spots
-bin/mongo-log-parser label /path/to/bundle tickets.read.empty --source rs0-1
-bin/mongo-log-parser labels                       # the rule book
+./scripts/build.sh
+./bin/mongo-log-parser "/path/to/bundle"
 ```
 
 ## How an investigation narrows

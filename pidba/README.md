@@ -11,12 +11,8 @@ Run these commands from the repository root after [cloning the repository](../RE
 
 ```bash
 npm --prefix pidba ci
-./pidba/scripts/pidba --version
 ./pidba/scripts/pidba
 ```
-
-The first install/build downloads dependencies. `--version` verifies the launcher, Pi runtime and
-parser build without making a model request. No global Pi installation is required.
 
 The examples below use `pidba` as shorthand for `./pidba/scripts/pidba` from the repository root.
 You can optionally link `pidba/scripts/pidba` into a directory on your PATH.
