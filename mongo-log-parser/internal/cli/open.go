@@ -8,9 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"mongo-log-parser/internal/ftdc"
 	"mongo-log-parser/internal/funnel"
 	"mongo-log-parser/internal/label"
+	"mongo-log-parser/internal/metrics"
 	"mongo-log-parser/internal/render"
+	"mongo-log-parser/internal/series"
 	"mongo-log-parser/internal/timeparse"
 )
 
@@ -25,6 +28,8 @@ func runLabel(root string, args []string) error {
 	instance := fs.String("instance", "", "the disk or member, for a label that has them")
 	atText := fs.String("at", "", "a moment to read second by second (UTC)")
 	span := fs.Duration("span", 4*time.Minute, "how much around --at to read second by second")
+	chart := fs.Bool("chart", false, "draw the label's derived signal in its signal unit")
+	bin := fs.Int64("bin", 0, "chart bin size in seconds; chosen from the window by default")
 	color := fs.String("color", "never", "never (default), auto or always")
 	words, err := parse(fs, args)
 	if err != nil {
@@ -32,6 +37,9 @@ func runLabel(root string, args []string) error {
 	}
 	if len(words) != 1 {
 		return fmt.Errorf("name one label to open, e.g. tickets.read.empty; every label is listed by `mongo-log-parser labels`")
+	}
+	if err := bounded(bound{"bin", int(*bin), 0}); err != nil {
+		return err
 	}
 	name := words[0]
 	if len(label.Definitions(name)) == 0 {
@@ -86,7 +94,7 @@ func runLabel(root string, args []string) error {
 		everyNode[i] = f.label
 	}
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
-	opened := make([]funnel.Opened, 0, len(set.streams))
+	entries := make([]openedEntry, 0, len(set.streams))
 	sections, notes := make([]string, 0, 4), make([]string, 0, 4)
 	for i, stream := range set.streams {
 		node := set.sources[i]
@@ -114,8 +122,15 @@ func runLabel(root string, args []string) error {
 				}
 				o.Focus[j].Evidence = e
 			}
-			opened = append(opened, o)
-			sections = append(sections, renderOpened(o, options))
+			entry := openedEntry{Opened: o, Rule: catalogueEntry(r.Rule())}
+			body := renderOpened(o, options)
+			if *chart {
+				plotted := labelSignalSeries(r.Rule(), node, r.Instance, samples, start, end, *bin, outputWidth(c.width))
+				entry.SignalSeries = &plotted
+				body = render.MetricsReport([]series.Series{plotted}, render.ReportOptions{Width: outputWidth(c.width), ChartHeight: 6, Color: options.Color}) + "\n\n" + body
+			}
+			entries = append(entries, entry)
+			sections = append(sections, body)
 		}
 		if !found {
 			notes = append(notes, node+": "+whyNotLabelled(name, *instance, skipped))
@@ -125,10 +140,6 @@ func runLabel(root string, args []string) error {
 	if len(notes) > 0 {
 		text = strings.TrimSpace(text + "\n\n" + strings.Join(notes, "\n"))
 	}
-	entries := make([]openedEntry, 0, len(opened))
-	for _, o := range opened {
-		entries = append(entries, openedEntry{Opened: o, Rule: catalogueEntry(o.Result.Rule())})
-	}
 	return emit(os.Stdout, c.json, "label", root, entries, withVersion(text), notes)
 }
 
@@ -136,7 +147,29 @@ func runLabel(root string, args []string) error {
 // with what the rule measures, its reference and when it applies.
 type openedEntry struct {
 	funnel.Opened
-	Rule ruleEntry `json:"rule"`
+	Rule         ruleEntry      `json:"rule"`
+	SignalSeries *series.Series `json:"signal_series,omitempty"`
+}
+
+// labelSignalSeries uses the rule's exact derived values, including ratios, scaling and instance
+// resolution. It plots the underlying signal, not the label's normalized time-above/below view.
+func labelSignalSeries(rule label.Rule, node, instance string, samples *ftdc.Samples, from, to time.Time, bin int64, width int) series.Series {
+	points := label.Seconds(rule, samples, instance, from, to)
+	path := rule.Name
+	derived := &ftdc.Samples{Values: map[string][]float64{path: make([]float64, 0, len(points))}}
+	for _, point := range points {
+		derived.Timestamps = append(derived.Timestamps, point.At.UnixMilli())
+		derived.Values[path] = append(derived.Values[path], point.Value)
+	}
+	plotted := metrics.Build(derived, node, path, metrics.Options{From: from, To: to, Mode: "gauge", BucketSeconds: bin, TargetBins: width - 14})
+	plotted.Label = strings.TrimSpace(rule.Name+" "+instance) + " [" + rule.Signal.Unit + "]"
+	plotted.Unit = rule.Signal.Unit
+	plotted.Mode = "derived signal"
+	plotted.Low = rule.Direction == "down" || rule.View == label.ViewMin || rule.View == label.ViewTimeBelow
+	if !plotted.Low {
+		plotted.PlotAggregation = "avg"
+	}
+	return plotted
 }
 
 // whyNotLabelled says why a node has no reading of the label asked for.

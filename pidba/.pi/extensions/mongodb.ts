@@ -254,8 +254,10 @@ ${dataPath
   pi.registerTool({
     name: "mongo_label",
     label: "MongoDB label opened",
-    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst sample, stretches of samples past its mark, longest first, with observed timestamps; elapsed durations require cadence and gap checks, and for the longest few windows: the labels the rule pairs with, read over those samples beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window sample by sample, the label and its pairs side by side. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_above_20, disk.await.",
+    description: "Open one label up on a node: the step after the report's labels section. It gives the rule behind the label (what it measures and how its bands read), the label's usual level, worst minute and worst sample, stretches of samples past its mark, longest first, with observed timestamps; elapsed durations require cadence and gap checks, and for the longest few windows: the labels the rule pairs with, read over those samples beside their usual level (the pool size beside how scarce the pool was, the wait time beside the queue), and what that node's log said in the same window — slow operations and where their time went, logged conditions, elections and step downs, index builds, error and warning counts, and the lines command that prints them. Set at to read a window sample by sample, the label and its pairs side by side. Set chart to return signal_series: the label's derived sample values with units, min/avg/max bins and timestamps for an ASCII chart beneath its finding. This is the underlying signal, not a time-above/below label view. Label names are the ones the report prints, e.g. tickets.read.empty, cache.dirty_above_20, disk.await.",
     parameters: Type.Object({
+      chart: Type.Optional(Type.Boolean({ description: "Return signal_series for charting the label's derived signal in its signal unit" })),
+      bin: Type.Optional(Type.Integer({ minimum: 1, description: "Signal chart bin size in seconds; automatically chosen by default" })),
       label: Type.String({ description: "The label to open, as the report printed it, e.g. tickets.read.empty" }),
       source: Type.Optional(Type.String({ description: "The node to open it on, as the report printed it. Every node that has the label by default." })),
       instance: Type.Optional(Type.String({ description: "The disk or replica set member, for a label that has them (the word after the label name in the report)" })),
@@ -266,7 +268,7 @@ ${dataPath
     async execute(_id, p, signal, _update, ctx) {
       return result(ctx, await run("label", [
         p.label, ...arg("source", p.source), ...arg("instance", p.instance), ...arg("at", p.at),
-        ...arg("span", p.span), ...windowArgs(p),
+        ...arg("span", p.span), ...arg("bin", p.bin), ...(p.chart ? ["--chart"] : []), ...windowArgs(p),
       ], signal));
     },
     ...renderer("label", (report) => {

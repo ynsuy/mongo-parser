@@ -84,3 +84,15 @@ Names and log text retain their original characters. JSON data and metric calcul
 
 The label review workbook includes supporting-label conditions (`open_with`), signal thresholds,
 view/direction and a **Raw definitions** sheet containing every current definition as complete JSON.
+
+To chart a label's derived signal (with the same formula and signal unit used by the rule):
+
+```bash
+bin/mongo-log-parser label /path/to/bundle disk.busy --instance sda --chart
+```
+
+Add `--source`, `--from`, `--to` or `--bin 60` to focus the graph. `--json --chart` includes
+`signal_series` with sample statistics and min/avg/max time bins. For time-above/below labels,
+the chart shows the underlying signal, not the normalized s/min view. Ordinary label charts plot
+sample-weighted means; depletion charts retain minima. Exact sample extrema remain in the summary
+and JSON. `plot_aggregation` records the selected plotting rule.

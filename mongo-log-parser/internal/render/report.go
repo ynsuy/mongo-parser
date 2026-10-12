@@ -157,15 +157,21 @@ func reportHeader(rows []series.Series, first, last float64) []string {
 // board that mixes the two has to say so: a reader comparing a flat line against a dipping one is
 // owed the fact that they are not the same reduction.
 func binNote(rows []series.Series) string {
-	pools, peaks := false, false
+	pools, peaks, means := false, false, false
 	for _, row := range rows {
-		if row.Low {
+		if row.PlotAggregation == "avg" && !row.Low {
+			means = true
+		} else if row.Low {
 			pools = true
 		} else {
 			peaks = true
 		}
 	}
 	switch {
+	case means && (pools || peaks):
+		return "mean per bin where requested; trough for what runs out, peak otherwise"
+	case means:
+		return "sample-weighted mean per bin"
 	case pools && peaks:
 		return "peak per bin, trough per bin for what runs out (available)"
 	case pools:

@@ -86,17 +86,14 @@ still contain gaps, so check `mongo_coverage` before correlating across nodes.
 
 ## Reporting
 
-Write RCA answers as numbered findings, followed by one overall assessment at the bottom.
+Write RCA answers as numbered short paragraphs, followed by one overall assessment at the bottom.
 Start directly with the findings. Do not add a summary, heading or table before them.
-Use this layout in Turkish; translate the labels when the user writes in another language:
+Each numbered paragraph combines the observation and its meaning in two or three short sentences.
+Do not add separate "Bulgu" or "Yorum" lines. Use this layout:
 
-1. <Observed finding in one or two short sentences.>
+1. <Observed finding. What it supports, and what remains unknown.>
 
-   Yorum: <What this supports and what remains unknown, in one or two short sentences.>
-
-2. <Next observed finding.>
-
-   Yorum: <Its interpretation.>
+2. <Next observed finding and its interpretation.>
 
 Genel değerlendirme: <Connect the supported findings in two or three short sentences; state the
 best-supported hypothesis, what is not confirmed, and the evidence needed to confirm it.>
@@ -104,7 +101,15 @@ best-supported hypothesis, what is not confirmed, and the evidence needed to con
 Keep each item about one topic. Put related measurements together and retain their label names.
 Use a few items when evidence is limited. Add items rather than dropping findings from the required
 open/notice inventory. Do not turn that inventory into a table or repeat it in the final paragraph.
-Use tables or charts only when the user asks for them. Do not use nested bullet lists or box drawing.
+Use tables only when the user asks for them. Do not use nested bullet lists or box drawing.
+For a material metric change, place a compact ASCII time chart directly beneath its numbered
+paragraph when it helps show the change, spike or depletion. Retrieve `mongo_label` with `chart:true`,
+the exact source/instance and an evidence-supported window. Use its `signal_series` for the graph.
+Respect `plot_aggregation` (avg means sample-weighted bucket means); retain sample extrema in text.
+The series is the rule's derived signal in `rule.signal.unit`, not necessarily the label's view unit;
+for example, a time-above label's signal is percent, not s/min. Do not relabel a raw counter rate
+as a scaled percentage. Use `mongo_metrics` for unlabelled raw metrics. Keep charts selective.
+If no series is available, explain the finding in text; do not invent a graph from summary values.
 For a simple follow-up, answer directly in a few sentences instead of forcing the full RCA layout.
 
 Use everyday words, active sentences and consistent terms. Aim for at most 25 words per descriptive
@@ -121,7 +126,8 @@ Use structured `data` for numbers and descriptions. Parser tables and charts are
 in the terminal; tool content contains structured JSON only. A paged answer is read whole, every
 page through `mongo_page`, before anything is concluded from it.
 
-When the user asks for a visual, use compact plain ASCII charts in fenced code blocks or tables.
+Use compact plain ASCII charts in fenced code blocks beneath relevant numbered paragraphs.
+Use tables only on request.
 Use only returned structured values; do not use ANSI colors,
 Unicode block sparklines or decorative drawing characters. Label the source/node, metric, unit,
 UTC time bounds, bin size and aggregation (min, avg or max). Preserve zeros, isolated extrema and

@@ -73,12 +73,13 @@ type Series struct {
 	// Low says the trough of a bin is its event, not its peak. A pool of tickets or connections is
 	// read for how empty it got: binning it to the peak draws a flat line at full for a node that
 	// ran out, which is the opposite of what happened.
-	Low           bool     `json:"low,omitempty"`
-	SampleCount   int      `json:"sample_count"`
-	BucketSeconds int64    `json:"bucket_seconds"`
-	Stats         *Stats   `json:"stats"`
-	Chart         *Scale   `json:"chart"`
-	Buckets       []Bucket `json:"buckets"`
+	PlotAggregation string   `json:"plot_aggregation,omitempty"` // "avg" plots sample-weighted bucket means; empty preserves extrema
+	Low             bool     `json:"low,omitempty"`
+	SampleCount     int      `json:"sample_count"`
+	BucketSeconds   int64    `json:"bucket_seconds"`
+	Stats           *Stats   `json:"stats"`
+	Chart           *Scale   `json:"chart"`
+	Buckets         []Bucket `json:"buckets"`
 }
 
 // Range is the lowest and highest value a chart of this series has to cover.
@@ -122,6 +123,12 @@ func (s *Series) BinnedOver(slots int, first, last float64) []float64 {
 	for i := range values {
 		values[i] = math.NaN()
 	}
+	var sums []float64
+	var counts []int
+	if s.PlotAggregation == "avg" && !s.Low {
+		sums = make([]float64, width)
+		counts = make([]int, width)
+	}
 	span := math.Max(seconds*1000, last-first+seconds*1000)
 	for _, bucket := range s.Buckets {
 		slot := int(math.Min(float64(width-1), math.Floor((parseStart(bucket.Start)-first)/span*float64(width))))
@@ -130,6 +137,14 @@ func (s *Series) BinnedOver(slots int, first, last float64) []float64 {
 		}
 		if slot > width-1 {
 			slot = width - 1
+		}
+		if sums != nil {
+			if bucket.Samples > 0 {
+				sums[slot] += bucket.Avg * float64(bucket.Samples)
+				counts[slot] += bucket.Samples
+				values[slot] = sums[slot] / float64(counts[slot])
+			}
+			continue
 		}
 		// The peak of the bins folded into a slot: a brief spike is the whole point of screening.
 		// For a pool it is the other way round, and the trough is the spike.

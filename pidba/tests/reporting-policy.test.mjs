@@ -46,11 +46,11 @@ test("visual reporting uses structured ASCII values and preserves evidence scope
   }
 });
 
-test("numbered RCA findings separate observations from comments without default tables", () => {
+test("numbered RCA paragraphs combine interpretation and use exact label signal charts", () => {
   const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
   for (const text of [prompt, skill]) {
-    for (const requirement of ["numbered findings", "Yorum:", "Genel değerlendirme:",
-      "rather than dropping findings", "Use tables or charts only when the user asks",
+    for (const requirement of ["numbered short paragraphs", "Genel değerlendirme:", "Do not add separate",
+      "rather than dropping findings", "Use tables only when the user asks", "directly beneath", "signal_series", "chart:true",
       "at most 25 words", "Keep exact metric IDs", "mark\nhypotheses as hypotheses",
       "A tool failure is not an empty result"])
       assert.ok(text.includes(requirement), `Missing answer requirement: ${requirement}`);
