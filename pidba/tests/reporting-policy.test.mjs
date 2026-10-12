@@ -45,3 +45,12 @@ test("visual reporting uses structured ASCII values and preserves evidence scope
     assert.ok(!text.includes("Quote a parser chart from `render`"));
   }
 });
+
+test("short answers keep the complete evidence inventory and explain failures", () => {
+  const skill = readFileSync(new URL("../.pi/skills/mongodb/SKILL.md", import.meta.url), "utf8");
+  for (const text of [prompt, skill]) {
+    for (const requirement of ["3-6 flat bullets", "a single", "Avoid nested lists",
+      "rather than dropping findings", "A tool failure is not an empty result"])
+      assert.ok(text.includes(requirement), `Missing answer requirement: ${requirement}`);
+  }
+});

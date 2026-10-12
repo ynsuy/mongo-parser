@@ -116,6 +116,15 @@ and confirm them with the available node, version, workload and time-aligned evi
 
 ## Reporting
 
+Default to a short answer: lead with the conclusion, then use 3-6 flat bullets, each a single
+clear sentence covering one finding, uncertainty or next action. Avoid nested lists, repeated
+summaries, long introductions and narrating the investigation. Use at most one compact table or
+ASCII chart when it adds evidence. If the required open/notice inventory is longer, put it in a
+compact table rather than dropping findings to meet the length preference. Expand only when the
+user asks for detail or the evidence needs it. A tool failure is not an empty result: explain the
+actual error and do not infer an RCA from missing tool evidence.
+
+
 Tool content is structured JSON: `data` holds every structured field the parser wrote. Tables and
 charts are displayed locally in the terminal. No structured evidence is sampled or cut.
 An answer too big for one result arrives in pages: the first line names a `paged_result` and

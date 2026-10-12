@@ -158,3 +158,7 @@ Ask the agent to filter by a reported query hash, or use the parser directly:
 Structured `notes` preserve unavailable-label reasons and FTDC decode warnings even though
 `render` is excluded from model content. Parser rankings, sampled examples and time bins retain
 their scope; paging preserves all returned JSON, not every raw record in the bundle.
+
+Parser tool calls run sequentially to protect the shared cache during its first ingest. Tool errors
+show the parser's actual diagnostic instead of only `failed`. Answers default to short, flat,
+one-sentence bullets; longer findings inventories go in a compact table without dropping evidence.

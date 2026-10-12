@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { ParserRunner } from "../lib/parser-runner.js";
 import { selectPath, directory } from "../lib/data-path.js";
 import { pageBytes, pageHeader, parserResult, ResultPages, type ParserReport } from "../lib/tool-result.js";
 import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
@@ -100,20 +101,17 @@ function width(): number {
 // The parser reads the bundle into a local store on the first call and answers from it afterwards,
 // so the first question of a session is slower than the rest. Names are not masked: whatever the
 // bundle holds reaches the model as it was written.
+const parserRunner = new ParserRunner();
+
 async function run(command: string, args: string[], signal?: AbortSignal): Promise<Report> {
   if (!dataPath) throw new Error("No bundle selected. Ask the user to include an existing directory path in their message or use /path.");
+  const selectedPath = dataPath;
+  const selectedRevision = bundleVersion;
+  const stdout = await parserRunner.run(parser, [command, selectedPath, "--json", ...arg("width", width()), ...args], signal);
   try {
-    const { stdout } = await runFile(parser, [command, dataPath, "--json", ...arg("width", width()), ...args], {
-      signal,
-      maxBuffer: 128 * 1024 * 1024,
-    });
-    return { ...JSON.parse(stdout), requested_args: args } as Report;
+    return { ...JSON.parse(stdout), requested_args: args, bundle_revision: selectedRevision } as Report;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "unknown";
-    if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
-      throw new Error("Parser output exceeded the local 128 MiB buffer. No partial evidence was returned; narrow the time window, source or filters and retry.");
-    }
-    throw new Error(`parser failed (${code}); check the selected directory and parser installation locally.`);
+    throw new Error(`Parser returned invalid JSON for ${command}; no evidence was accepted.`, { cause: error });
   }
 }
 
@@ -123,10 +121,10 @@ const pages = new ResultPages();
 // Send the parser's structured evidence to the model, in pages sized to its context window when it is
 // large, while the terminal keeps the parser's own presentation.
 function result(ctx: ExtensionContext, report: Report) {
-  return parserResult(report, bundleVersion, pageBytes(ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow), pages);
+  return parserResult(report, typeof report.bundle_revision === "number" ? report.bundle_revision : bundleVersion, pageBytes(ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow), pages);
 }
 
-type ToolResult = { isError?: boolean; details?: { data?: Report } };
+type ToolResult = { isError?: boolean; content?: { type: string; text?: string }[]; details?: { data?: Report } };
 
 function renderer(title: string, summary: (report: Report) => string) {
   return {
@@ -135,7 +133,10 @@ function renderer(title: string, summary: (report: Report) => string) {
     },
     renderResult(toolResult: ToolResult, options: { expanded: boolean; isPartial: boolean }, theme: Theme) {
       if (options.isPartial) return new Text(theme.fg("muted", "  … parsing"), 0, 0);
-      if (toolResult.isError || !toolResult.details?.data) return new Text(theme.fg("error", "  ✗ failed"), 0, 0);
+      if (toolResult.isError || !toolResult.details?.data) {
+        const reason = toolResult.content?.filter(item => item.type === "text").map(item => item.text ?? "").join("\n").trim() || "Parser returned no evidence.";
+        return new Text(theme.fg("error", `  ✗ ${reason}`), 0, 0);
+      }
       const report = toolResult.details.data;
       const line = theme.fg("success", `  ✓ ${summary(report)}`);
       return new Text(options.expanded && report.render ? `${line}\n${report.render}` : line, 0, 0);
@@ -293,7 +294,7 @@ ${dataPath
   pi.registerTool({
     name: "mongo_metrics",
     label: "MongoDB FTDC metrics",
-    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them for the standard overview board (queues, tickets, latency, operations, cache, cpu, disk), the same board for every node and every window. Name several sources to compare nodes: each stream is read over the same window and gets its own colour, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
+    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them for the standard overview board (queues, tickets, latency, operations, cache, cpu, disk), the same board for every node and every window. Name several sources to compare nodes: each stream is read over the same window and identified by its source, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
     parameters: Type.Object({
       sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
       metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*. Every column FTDC holds is reachable, not only the board's: the kernel's TCP counters are systemMetrics/netstat/Tcp:* and TcpExt:* (RetransSegs, OutSegs, TCPTimeouts, ListenOverflows, CurrEstab)" })),

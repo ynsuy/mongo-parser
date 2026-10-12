@@ -86,6 +86,15 @@ still contain gaps, so check `mongo_coverage` before correlating across nodes.
 
 ## Reporting
 
+Default to a short answer: lead with the conclusion, then use 3-6 flat bullets, each a single
+clear sentence covering one finding, uncertainty or next action. Avoid nested lists, repeated
+summaries, long introductions and narrating the investigation. Use at most one compact table or
+ASCII chart when it adds evidence. If the required open/notice inventory is longer, put it in a
+compact table rather than dropping findings to meet the length preference. Expand only when the
+user asks for detail or the evidence needs it. A tool failure is not an empty result: explain the
+actual error and do not infer an RCA from missing tool evidence.
+
+
 Use structured `data` for numbers and descriptions. Parser tables and charts are displayed locally
 in the terminal; tool content contains structured JSON only. A paged answer is read whole, every
 page through `mongo_page`, before anything is concluded from it.
