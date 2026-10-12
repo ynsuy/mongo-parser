@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"mongo-log-parser/internal/funnel"
 	"mongo-log-parser/internal/label"
@@ -82,11 +83,21 @@ func worstSecond(i funnel.Item) string {
 	if i.PeakSecondAt.IsZero() {
 		return "-"
 	}
-	text := fmt.Sprintf("%s at %s", amount(i.PeakSecond, i.SignalUnit), i.PeakSecondAt.Format("15:04:05"))
+	text := secondAt(i.PeakSecond, i.SignalUnit, i.PeakSecondAt)
 	if i.Rule().Timed() && i.PastSeconds > 0 {
 		text += fmt.Sprintf(", %s past in all", duration(int64(i.PastSeconds)*1000))
 	}
 	return text
+}
+
+// secondAt is a signal's value at one second. An indicator's value is a code, not an amount, so
+// only the moment is printed.
+func secondAt(value float64, unit string, at time.Time) string {
+	stamp := at.Format("01-02 15:04:05")
+	if unit == "state" || unit == "running" {
+		return "at " + stamp
+	}
+	return amount(value, unit) + " at " + stamp
 }
 
 func amount(value float64, unit string) string {

@@ -21,10 +21,10 @@ func runMetrics(root string, args []string) error {
 	flags.Var(&named, "metric", "metric path or name, * and ? matching several; repeat for more")
 	w := addWindowFlags(flags)
 	binSeconds := flags.Int64("bin", 0, "bin size in seconds; chosen from the window by default")
-	height := flags.Int("height", chartHeight, "chart rows per metric")
+	height := flags.Int("height", chartHeight, "bar rows per stream")
 	list := flags.Bool("list", false, "list the metrics worth charting, by group, instead of drawing them")
-	overlay := flags.Bool("overlay", false, "draw every stream of a metric on one chart instead of one chart each")
-	grid := flags.Bool("grid", false, "a stream to a column and a metric to a row")
+	overlay := flags.Bool("overlay", false, "accepted for compatibility; every stream of a metric is drawn on one panel")
+	grid := flags.Bool("grid", false, "accepted for compatibility; every stream of a metric is drawn on one panel")
 	color := flags.String("color", "never", "never (default), auto or always")
 	words, err := parse(flags, args)
 	if err != nil {
@@ -93,10 +93,7 @@ func runMetrics(root string, args []string) error {
 	// The plot sits inside the table, past the value-axis gutter; bins are chosen to fill it. A
 	// grid's plot is one panel wide, not one table wide, so it asks for its own count: binning to
 	// the terminal and then folding four bins into every column throws away the peak of three.
-	plotWidth := outputWidth(c.width) - 14
-	if *grid {
-		plotWidth = render.GridSlots(outputWidth(c.width), len(set.sources))
-	}
+	plotWidth := render.BarColumns(outputWidth(c.width))
 	options := metrics.Options{From: start, To: end, BucketSeconds: *binSeconds, TargetBins: plotWidth}
 	perMetric := make(map[string][]series.Series, len(order))
 	for _, path := range order {
@@ -115,16 +112,11 @@ func runMetrics(root string, args []string) error {
 		return fmt.Errorf("no metrics matched; try --metric or a wider window")
 	}
 
-	// Gnuplot draws every selected stream; JSON evidence remains available if plotting is unavailable.
-	rendered, chartErr := render.GnuplotReport(drawn, render.GnuplotOptions{Width: outputWidth(c.width), Height: *height, Grid: *grid, Overlay: *overlay})
+	// A panel per metric, a strip per stream on one scale. --overlay, --grid and --color are
+	// accepted for compatibility; bars already stack every stream of a metric together.
+	_, _, _ = overlay, grid, color
+	rendered := render.BarChart(drawn, render.BarOptions{Width: outputWidth(c.width), Height: *height})
 	var notes []string
-	if chartErr != nil {
-		if !c.json {
-			return chartErr
-		}
-		notes = append(notes, chartErr.Error())
-	}
-	_ = color // Color remains accepted for CLI compatibility; gnuplot dumb output is monochrome.
 	footer := fmt.Sprintf("%d chunks indexed across %s; %s; decode and render in %s",
 		set.chunks, plural(len(set.streams), "stream"), strings.Join(set.spans(), "; "), time.Since(started).Round(time.Millisecond))
 	if damage := damageNote(samples, set.sources); damage != "" {

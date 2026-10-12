@@ -4698,7 +4698,7 @@
       },
       {
         "bands": "current ≤1 (fading to 3) · behind 3–10 (edges 1, 20) · lagging ≥20 (from 10)",
-        "doc": "Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to seconds. Minute summaries select the highest valid sample.",
+        "doc": "Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to seconds. Minute summaries select the highest valid sample. A sample with either time unset (zero) is left out.",
         "elevated": 10,
         "formula": "replSetGetStatus/optimes/lastAppliedWallTime − replSetGetStatus/optimes/lastCommittedWallTime × 0.001, in s, at each available sample",
         "levels": [
@@ -4744,6 +4744,7 @@
             "replSetGetStatus/optimes/lastAppliedWallTime"
           ],
           "scale": 0.001,
+          "timestamps": true,
           "unit": "s"
         },
         "since": "4.2",

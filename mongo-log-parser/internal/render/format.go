@@ -159,31 +159,19 @@ func BinLabel(seconds int64) string {
 	switch {
 	case seconds <= 0:
 		return ""
+	case seconds%86400 == 0:
+		return fmt.Sprintf("%dd", seconds/86400)
 	case seconds%3600 == 0:
 		return fmt.Sprintf("%dh", seconds/3600)
+	case seconds > 3600 && seconds%60 == 0:
+		return fmt.Sprintf("%dh%dm", seconds/3600, seconds%3600/60)
 	case seconds%60 == 0:
 		return fmt.Sprintf("%dm", seconds/60)
 	}
 	return fmt.Sprintf("%ds", seconds)
 }
 
-var (
-	clockMinutes = regexp.MustCompile(`T(\d\d:\d\d)`)
-	clockSeconds = regexp.MustCompile(`T(\d\d:\d\d:\d\d)`)
-	peakClock    = regexp.MustCompile(`T([\d:]{8})`)
-)
-
-// Clock shortens a timestamp to the precision the bin size can actually distinguish.
-func Clock(timestamp string, seconds int64) string {
-	pattern := clockSeconds
-	if seconds%60 == 0 {
-		pattern = clockMinutes
-	}
-	if match := pattern.FindStringSubmatch(timestamp); match != nil {
-		return match[1]
-	}
-	return timestamp
-}
+var peakClock = regexp.MustCompile(`T([\d:]{8})`)
 
 func peakTime(stats *series.Stats) string {
 	if stats == nil || stats.Peak == nil {
@@ -193,26 +181,6 @@ func peakTime(stats *series.Stats) string {
 		return match[1]
 	}
 	return "-"
-}
-
-// pack joins parts with " | " while they fit the width, wrapping onto further lines.
-func pack(parts []string, width int) []string {
-	lines := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if utf8.RuneCountInString(part) > width {
-			// One part longer than the whole line cannot be wrapped, only cut.
-			part = Fit(part, width, AlignTail)
-		}
-		if len(lines) > 0 {
-			last := lines[len(lines)-1]
-			if utf8.RuneCountInString(last)+utf8.RuneCountInString(part)+3 <= width {
-				lines[len(lines)-1] = last + " | " + part
-				continue
-			}
-		}
-		lines = append(lines, part)
-	}
-	return lines
 }
 
 // Wrap folds text onto lines of at most width characters, indenting every line after the first by

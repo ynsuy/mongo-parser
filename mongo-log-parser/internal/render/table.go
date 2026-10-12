@@ -80,3 +80,11 @@ func Table(columns []Column, options TableOptions) string {
 	}
 	return strings.Join(append(out, border), "\n")
 }
+
+func tableBorder(widths []int) string {
+	border := "+"
+	for _, w := range widths {
+		border += strings.Repeat("-", w+2) + "+"
+	}
+	return border
+}

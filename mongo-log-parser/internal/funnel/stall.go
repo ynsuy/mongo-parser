@@ -131,9 +131,9 @@ func corroborate(item *Item, index map[string]label.Result) {
 // tier decides where one label sits, and records why.
 //
 // Open is a peak in a band the rule says is worth opening (the top two of four or more by default),
-// a mark the label spent more than a rare minute past, or a notable shape above the lowest band.
-// Notice is a peak anywhere above the lowest band, or a notable shape on a label that has no bands
-// or stayed in its lowest — a workload that stepped up is worth a glance even when no level is high.
+// or a mark the label spent more than a rare minute past. Notice is a peak anywhere above the
+// lowest band, or a notable shape — a workload that stepped up is worth a glance even when no level
+// is high, but a shape alone does not make a middle band worth opening.
 func tier(r label.Result) Item {
 	rule := r.Rule()
 	item := Item{Result: r, Tier: TierOrdinary}
@@ -160,11 +160,7 @@ func tier(r label.Result) Item {
 	}
 	if shape {
 		item.Why = append(item.Why, r.Shape)
-		switch {
-		case item.Tier == TierOpen:
-		case index > 0:
-			item.Tier = TierOpen
-		default:
+		if item.Tier == TierOrdinary {
 			item.Tier = TierNotice
 		}
 	}

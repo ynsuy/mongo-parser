@@ -23,21 +23,22 @@ func ramp(count int, base, step float64) []float64 {
 	return values
 }
 
-func TestAutoBucketSecondsSnapsToReadableBins(t *testing.T) {
+func TestAutoBucketSecondsFitsOneBinPerColumn(t *testing.T) {
 	for _, c := range []struct {
 		span    time.Duration
 		sample  int64
 		bins    int
 		seconds int64
 	}{
-		{time.Hour, 1, 60, 60},        // an hour over 60 bins is a minute each
-		{3 * time.Hour, 1, 60, 120},   // the coarsest step that still fills 60 bins
-		{15 * time.Minute, 1, 60, 15}, //
-		{24 * time.Hour, 1, 60, 900},  //
-		{time.Hour, 10, 60, 60},       // sampling every 10s still allows minute bins
-		{5 * time.Minute, 10, 60, 10}, // too short to fill the plot: fall back to the sample interval
-		{time.Hour, 1, 100, 30},       // a wider plot buys finer bins
-		{time.Hour, 1, 200, 15},       //
+		{time.Hour, 1, 60, 120},       // a minute each needs 61 columns
+		{time.Hour, 1, 61, 60},        // and gets them
+		{3 * time.Hour, 1, 60, 300},   // the finest step whose bins fit 60 columns
+		{15 * time.Minute, 1, 60, 30}, //
+		{24 * time.Hour, 1, 60, 1800}, //
+		{time.Hour, 10, 61, 60},       // sampling every 10s still allows minute bins
+		{5 * time.Minute, 10, 60, 10}, // short windows stop at the sample interval
+		{time.Hour, 1, 100, 60},       //
+		{time.Hour, 1, 200, 30},       // a wider plot buys finer bins
 	} {
 		if got := AutoBucketSecondsFor(c.span, c.sample, c.bins); got != c.seconds {
 			t.Errorf("span %s at %ds sampling over %d bins: got %d, want %d", c.span, c.sample, c.bins, got, c.seconds)

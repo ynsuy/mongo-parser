@@ -131,7 +131,8 @@ func (s *Series) BinnedOver(slots int, first, last float64) []float64 {
 	}
 	span := math.Max(seconds*1000, last-first+seconds*1000)
 	for _, bucket := range s.Buckets {
-		slot := int(math.Min(float64(width-1), math.Floor((parseStart(bucket.Start)-first)/span*float64(width))))
+		// The epsilon keeps a bucket that lands exactly on a column edge from rounding into the one before.
+		slot := int(math.Min(float64(width-1), math.Floor((parseStart(bucket.Start)-first)/span*float64(width)+1e-9)))
 		if slot < 0 {
 			slot = 0
 		}

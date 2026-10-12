@@ -120,4 +120,4 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 // chartHeight is the plot rows a metric gets, in every command that draws one. metrics and report
 // answer the same question at two levels of detail; a chart that changed size between them would
 // make them look like two tools.
-const chartHeight = 7
+const chartHeight = 4

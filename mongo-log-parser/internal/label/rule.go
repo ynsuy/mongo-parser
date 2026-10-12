@@ -116,6 +116,9 @@ type Signal struct {
 	// Behind reads each instance as how far it trails the most advanced one: a replica set
 	// member's optime against the newest optime any member reports, in the same sample.
 	Behind bool `json:"behind,omitempty" yaml:"behind,omitempty"`
+	// Timestamps says Num and Minus are wall-clock times: a zero one was never set, and the sample
+	// is left out rather than read as fifty years of lag.
+	Timestamps bool `json:"timestamps,omitempty" yaml:"timestamps,omitempty"`
 	// MinDen is the least the denominator must sum to over a minute for the minute's ratio to count.
 	// A disk that served three requests in a minute has no meaningful time per request.
 	MinDen float64 `json:"min_den,omitempty" yaml:"min_den,omitempty"`

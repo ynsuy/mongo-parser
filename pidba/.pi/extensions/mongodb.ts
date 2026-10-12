@@ -300,7 +300,7 @@ ${dataPath
     parameters: Type.Object({
       sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
       metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*. Every column FTDC holds is reachable, not only the board's: the kernel's TCP counters are systemMetrics/netstat/Tcp:* and TcpExt:* (RetransSegs, OutSegs, TCPTimeouts, ListenOverflows, CurrEstab)" })),
-      overlay: Type.Optional(Type.Boolean({ description: "Draw every stream of a metric on one monochrome chart with a legend, instead of a chart each" })),
+      overlay: Type.Optional(Type.Boolean({ description: "Accepted for compatibility; every stream of a metric is already drawn on one panel, a bar strip per stream on one scale" })),
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics of the standard board to draw when none are named" })),
       height: Type.Optional(Type.Integer({ minimum: 2, maximum: 20, description: "Chart rows per metric" })),
       bin: Type.Optional(Type.Integer({ minimum: 1, description: "Bin size in seconds; chosen from the window by default" })),

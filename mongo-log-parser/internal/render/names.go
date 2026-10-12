@@ -89,28 +89,6 @@ func headAndSuffix(path string, depth int) string {
 	return segments[0] + "~" + strings.Join(segments[len(segments)-depth:], ".")
 }
 
-// Sources is the line naming every stream on a board and the colour it was drawn in.
-//
-// It is the same line above a report and a metrics table: whatever else those
-// three show, the reader has to be able to tell which node a line belongs to, and they should not
-// have to learn a different key for each command.
-func Sources(rows []series.Series, color bool) string {
-	paint := painter(color)
-	names := sourcesOf(rows)
-	if len(names) == 0 {
-		return ""
-	}
-	colors, pens := sourceColors(rows), sourceStrokes(rows)
-	parts := make([]string, len(names))
-	for i, source := range names {
-		// The key carries the glyph as well as the colour: on a chart where several streams are
-		// drawn over one another, the shape of a line is what tells them apart without colour.
-		rule := strings.Repeat(string(pens[source].flat), 2)
-		parts[i] = paint(rule+" "+source, colors[source])
-	}
-	return strings.Join(parts, "   ")
-}
-
 // nameOf is what to print for a series: the label it was given, or a name worked out from the path
 // alone when nothing gave it one.
 func nameOf(row series.Series) string {

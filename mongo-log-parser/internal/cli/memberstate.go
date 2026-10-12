@@ -128,26 +128,19 @@ func renderMemberStates(states []replMember, options render.TableOptions) string
 	if len(states) == 0 {
 		return ""
 	}
-	sources := make([]string, len(states))
-	ended := make([]string, len(states))
-	history := make([]string, len(states))
+	// A line per node rather than a table cell: the history is the answer, and a cell cut it off.
+	lines := []string{"member state, from FTDC (serverStatus.repl): what each node said it was, every sample"}
 	neither := false
-	for i, member := range states {
-		sources[i] = member.Source
-		ended[i] = member.EndedAs()
-		history[i] = describeSpans(member.Spans)
+	for _, member := range states {
 		neither = neither || member.EndedAs() == neitherState
+		wrapped := render.Wrap(fmt.Sprintf("%s ended as %s: %s", member.Source, member.EndedAs(), describeSpans(member.Spans)), options.Width-2, 4)
+		wrapped[0] = "  " + wrapped[0]
+		lines = append(lines, wrapped...)
 	}
-	table := render.Table([]render.Column{
-		{Title: "Node", Align: render.AlignTail, Values: sources},
-		{Title: "Ended as", Values: ended},
-		{Title: "What its own serverStatus recorded", Values: history, Elastic: true},
-	}, options)
-	note := "member state, from FTDC (serverStatus.repl): what each node said it was, every sample"
 	if neither {
-		note += "\n\"" + neitherState + "\" is neither primary nor secondary — starting up, recovering, rolling back, or an arbiter"
+		lines = append(lines, "\""+neitherState+"\" is neither primary nor secondary — starting up, recovering, rolling back, or an arbiter")
 	}
-	return note + "\n" + table
+	return strings.Join(lines, "\n")
 }
 
 func describeSpans(spans []memberSpan) string {

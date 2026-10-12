@@ -79,7 +79,7 @@ func renderReplication(nodes []analyze.Node, cluster *analyze.Cluster, states []
 		}
 		return out
 	}
-	out := renderNodes(nodes, limit, options)
+	out := "from the logs\n" + renderNodes(nodes, limit, options)
 	if band != "" {
 		out += "\n\nmember state over the window\n" + band
 	}
@@ -141,12 +141,23 @@ func renderCatalogue(catalogue *analyze.DDL, limit int, options render.TableOpti
 	if len(builds) == 0 && len(changes) == 0 {
 		return "no catalogue changes in this window"
 	}
-	parts := make([]string, 0, 2)
-	if len(builds) > 0 {
-		parts = append(parts, renderBuilds(builds, limit, options))
+	// A build logged as one line with no build id is the index a collection is created with; the
+	// change table already lists the creation, so the report leaves those to the ddl command.
+	tracked := make([]analyze.IndexBuild, 0, len(builds))
+	for _, build := range builds {
+		if build.UUID != "" || build.Phases > 1 {
+			tracked = append(tracked, build)
+		}
+	}
+	parts := make([]string, 0, 3)
+	if len(tracked) > 0 {
+		parts = append(parts, renderBuilds(tracked, limit, options))
 	}
 	if len(changes) > 0 {
 		parts = append(parts, renderChanges(changes, limit, options))
+	}
+	if hidden := len(builds) - len(tracked); hidden > 0 {
+		parts = append(parts, fmt.Sprintf("%s logged as one line without a build id are in: ddl", plural(hidden, "index build")))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -169,7 +180,7 @@ func renderGroups(groups []analyze.Group, limit int, options render.TableOptions
 		{Title: "Component", Values: text(func(g analyze.Group) string { return g.Component }), Drop: 3},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(g analyze.Group) string { return strconv.Itoa(g.Count) })},
 		{Title: "Category", Values: text(func(g analyze.Group) string { return string(g.Category) }), Drop: 1},
-		{Title: "Message", Values: text(func(g analyze.Group) string { return g.Message })},
+		{Title: "Message", Values: text(func(g analyze.Group) string { return g.Message }), Elastic: true},
 	}, options)
 }
 

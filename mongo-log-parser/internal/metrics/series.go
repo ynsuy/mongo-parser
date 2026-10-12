@@ -178,27 +178,16 @@ func bucket(points []point, seconds int64) []series.Bucket {
 	return buckets
 }
 
-// AutoBucketSecondsFor keeps charts readable with round bin sizes: the coarsest human interval
-// that still fills the plot with at least `bins` bins, so a wide terminal buys detail instead of
-// whitespace. Bins below the sample interval only manufacture gaps, so that is the floor.
+// AutoBucketSecondsFor keeps charts readable with round bin sizes: the finest human interval
+// whose bins all fit in `bins` columns, so one bar is exactly one bin. Bins below the sample
+// interval only manufacture gaps, so that is the floor.
 func AutoBucketSecondsFor(span time.Duration, sampleSeconds int64, bins int) int64 {
 	if bins <= 0 {
 		bins = 60
 	}
 	steps := []int64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400}
-	widest := int64(math.Floor(span.Seconds() / float64(bins)))
-	chosen := int64(0)
 	for _, step := range steps {
-		if step >= sampleSeconds && step <= widest {
-			chosen = step
-		}
-	}
-	if chosen > 0 {
-		return chosen
-	}
-	// The window is too short to fill the plot; fall back to the finest bin the data supports.
-	for _, step := range steps {
-		if step >= sampleSeconds {
+		if step >= sampleSeconds && int64(math.Floor(span.Seconds()/float64(step)))+1 <= int64(bins) {
 			return step
 		}
 	}

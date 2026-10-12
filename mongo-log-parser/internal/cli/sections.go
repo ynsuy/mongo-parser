@@ -191,7 +191,12 @@ func renderSignals(signals []analyze.Signal, limit int, options render.TableOpti
 		{Title: "Nodes", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(len(s.Sources)) }), Drop: 1},
 		{Title: "Look with", Values: text(func(s analyze.Signal) string { return s.Next })},
 	}, options)
-	return table + "\nReview is a fixed navigation priority, not logged severity or incident impact. Rows count text-pattern matches, not confirmed diagnoses.\n* Rate uses the first-to-last matched-record span, with a minimum denominator of one minute; it is not a full-coverage rate."
+	table += "\nReview is a fixed navigation priority, not logged severity or incident impact. Rows count text-pattern matches, not confirmed diagnoses."
+	// The footnote explains a column a narrow terminal may have dropped.
+	if strings.Contains(table, "Per min*") {
+		table += "\n* Rate uses the first-to-last matched-record span, with a minimum denominator of one minute; it is not a full-coverage rate."
+	}
+	return table
 }
 
 // renderMigrations names the collections whose chunks moved, which per-node counters cannot.
@@ -226,7 +231,7 @@ func activityChart(activity *analyze.Activity, first, last time.Time, binSeconds
 	if activity == nil || len(activity.All) == 0 || !last.After(first) {
 		return ""
 	}
-	slots := render.PanelBins(width)
+	slots := render.BarColumns(width)
 	if binSeconds <= 0 {
 		binSeconds = metrics.AutoBucketSecondsFor(last.Sub(first), analyze.TimelineStep, slots)
 	}
@@ -245,10 +250,10 @@ func activityChart(activity *analyze.Activity, first, last time.Time, binSeconds
 		if warnings > 0 {
 			lines = append(lines, countSeries("warnings (W)", fold(activity.Warnings, binSeconds), first, last, binSeconds))
 		}
-		panels = append(panels, gnuplotPanel(lines, render.PanelOptions{
-			Width: width, Height: slowChartRows, Color: color, First: from, Last: to,
+		panels = append(panels, barPanel(lines, render.BarOptions{
+			Width: width, Height: slowChartRows, First: from, Last: to,
 			Title: fmt.Sprintf("Errors and warnings per %s  ·  %s and %s in the window",
-				render.BinLabel(binSeconds), render.Compact(float64(errors)), render.Compact(float64(warnings))),
+				render.BinLabel(binSeconds), thousands(errors), thousands(warnings)),
 		}))
 	}
 
@@ -261,8 +266,8 @@ func activityChart(activity *analyze.Activity, first, last time.Time, binSeconds
 			lines = append(lines, countSeries(string(category), fold(activity.Category(category), binSeconds), first, last, binSeconds))
 		}
 	}
-	panels = append(panels, gnuplotPanel(lines, render.PanelOptions{
-		Width: width, Height: slowChartRows - 2, Color: color, First: from, Last: to,
+	panels = append(panels, barPanel(lines, render.BarOptions{
+		Width: width, Height: slowChartRows, First: from, Last: to,
 		Title: "Log lines per " + render.BinLabel(binSeconds),
 	}))
 

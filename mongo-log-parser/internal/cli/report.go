@@ -98,7 +98,7 @@ func runReport(root string, args []string) error {
 		bodies["activity"] = severityLine(activity)
 	}
 
-	sections := []string{reportHeading(root, st, q, set, activity, deployment.Summarize())}
+	sections := []string{reportHeading(root, st, q, set, start, end, activity, deployment.Summarize())}
 	if q.Files == 0 && len(set.streams) == 0 {
 		return emit(os.Stdout, c.json, "report", root, map[string]any{"quality": q},
 			withVersion(sections[0]+"\n\n"+noLogsNote(st)))
@@ -268,7 +268,7 @@ func windowQuery(start, end time.Time) store.Query {
 	return q
 }
 
-func reportHeading(root string, st *store.Store, q quality, set *streamSet, activity *analyze.Activity, summary analyze.Summary) string {
+func reportHeading(root string, st *store.Store, q quality, set *streamSet, start, end time.Time, activity *analyze.Activity, summary analyze.Summary) string {
 	var files int
 	var bytes int64
 	_ = st.DB.QueryRow(`SELECT count(*), coalesce(sum(size), 0) FROM source`).Scan(&files, &bytes)
@@ -279,6 +279,9 @@ func reportHeading(root string, st *store.Store, q quality, set *streamSet, acti
 	heading := fmt.Sprintf("%s\n%s, %.1f GB | %s | %s\n%s",
 		root, plural(files, "file"), float64(bytes)/1e9,
 		plural(len(set.streams), "FTDC stream"), read, windowLines(q, activity))
+	if ftdc := ftdcLines(set, start, end); ftdc != "" {
+		heading += "\n" + ftdc
+	}
 	if line := deploymentLine(summary); line != "" {
 		heading += "\n" + line
 	}
@@ -294,11 +297,11 @@ func reportHeading(root string, st *store.Store, q quality, set *streamSet, acti
 func windowLines(q quality, activity *analyze.Activity) string {
 	if activity == nil || activity.Records == 0 {
 		if q.FirstAt.IsZero() {
-			return "read     no log records"
+			return "logs     no log records"
 		}
-		return fmt.Sprintf("read     no log records in this window; the bundle holds %s", period(q.FirstAt, q.LastAt))
+		return fmt.Sprintf("logs     no log records in this window; the bundle holds %s", period(q.FirstAt, q.LastAt))
 	}
-	read := fmt.Sprintf("read     %s  ·  %s log records", period(activity.FirstAt, activity.LastAt), thousands(activity.Records))
+	read := fmt.Sprintf("logs     %s  ·  %s log records", period(activity.FirstAt, activity.LastAt), thousands(activity.Records))
 	// Within a minute of the bundle's own ends, this is the whole bundle and saying so twice is
 	// noise; narrower than that, the second line is what stops the first being misread.
 	const slack = time.Minute
@@ -307,6 +310,35 @@ func windowLines(q quality, activity *analyze.Activity) string {
 		return read
 	}
 	return read + fmt.Sprintf("\nbundle   %s  ·  the rest is outside the window asked for", period(q.FirstAt, q.LastAt))
+}
+
+// ftdcLines say what period each node's FTDC covers inside the window, one line per distinct
+// period with the nodes that share it.
+func ftdcLines(set *streamSet, start, end time.Time) string {
+	order := []string{}
+	nodes := map[string][]string{}
+	for i, stream := range set.streams {
+		first, last := stream.Span()
+		if !start.IsZero() && first.Before(start) {
+			first = start
+		}
+		if !end.IsZero() && last.After(end) {
+			last = end
+		}
+		span := "no samples in this window"
+		if !last.Before(first) {
+			span = period(first.UTC(), last.UTC())
+		}
+		if _, seen := nodes[span]; !seen {
+			order = append(order, span)
+		}
+		nodes[span] = append(nodes[span], set.sources[i])
+	}
+	lines := make([]string, 0, len(order))
+	for _, span := range order {
+		lines = append(lines, fmt.Sprintf("FTDC     %s  ·  %s", span, strings.Join(nodes[span], ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // askedWindow is the period a command was narrowed to, for the footer of every command that is not

@@ -175,3 +175,21 @@ func TestStretchesAreTheSecondsPastTheMark(t *testing.T) {
 		t.Fatalf("runs fifty seconds apart joined by a minute's gap: %+v", joined)
 	}
 }
+
+func TestAnUnsetCommitTimeIsNotLag(t *testing.T) {
+	optimes := "replSetGetStatus/optimes/"
+	wall := float64(start.UnixMilli())
+	samples := samplesFor(4, map[string]func(int) float64{
+		optimes + "lastAppliedWallTime": func(i int) float64 { return wall + float64(i)*1000 },
+		optimes + "lastCommittedWallTime": func(i int) float64 {
+			if i < 2 {
+				return 0
+			}
+			return wall + float64(i-1)*1000
+		},
+	})
+	got := Seconds(rule(t, "repl.majority_lag"), samples, "", time.Time{}, time.Time{})
+	if len(got) != 2 || got[0].Value != 1 || got[1].Value != 1 {
+		t.Fatalf("an unset commit time was read as lag: %+v", got)
+	}
+}

@@ -64,12 +64,14 @@ rules:
     title: "Majority commit lag"
     doc: >-
       Difference between this node's lastAppliedWallTime and lastCommittedWallTime, scaled to
-      seconds. Minute summaries select the highest valid sample.
+      seconds. Minute summaries select the highest valid sample. A sample with either time unset (zero)
+      is left out.
     since: "4.2"
     signal:
       mode: gauge
       unit: "s"
       scale: 0.001
+      timestamps: true
       num: ["replSetGetStatus/optimes/lastAppliedWallTime"]
       minus: ["replSetGetStatus/optimes/lastCommittedWallTime"]
     view: max

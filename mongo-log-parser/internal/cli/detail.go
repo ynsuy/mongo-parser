@@ -19,7 +19,7 @@ import (
 // the narrowing — the whole distribution of every measure, and what the shape did over time.
 
 // detailChartRows is taller than the timeline above a table: this is the only chart on the page.
-const detailChartRows = 9
+const detailChartRows = 5
 
 // measure is one row of a distribution table: a name, the numbers behind it, and how to print them.
 type measure struct {
@@ -190,7 +190,7 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 		return ""
 	}
 	if binSeconds <= 0 {
-		binSeconds = metrics.AutoBucketSecondsFor(last.Sub(first), analyze.TimelineStep, render.PanelBins(width))
+		binSeconds = metrics.AutoBucketSecondsFor(last.Sub(first), analyze.TimelineStep, render.BarColumns(width))
 	}
 	folded := analyze.Timeline{}
 	shape.Timeline.Fold(binSeconds, folded)
@@ -201,23 +201,23 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 	// wait shares an axis with the duration but not a question: on the duration panel it was a
 	// fourth line in a legend that had already run out of room, and its own shape — steady drip or
 	// one bad hour — was the thing it was drawn to show.
-	cost := gnuplotPanel([]series.Series{
+	cost := barPanel([]series.Series{
 		binSeries("max ms", folded, func(bin analyze.Bin) float64 { return bin.Max }, first, last, binSeconds),
 		binSeries("avg ms", folded, analyze.Bin.Avg, first, last, binSeconds),
 		binSeries("min ms", folded, func(bin analyze.Bin) float64 { return bin.Min }, first, last, binSeconds),
-	}, render.PanelOptions{
-		Width: width, Height: detailChartRows, Color: color, First: from, Last: to,
+	}, render.BarOptions{
+		Width: width, Height: detailChartRows, First: from, Last: to,
 		Title: fmt.Sprintf("Duration per %s  ·  avg %s ms over the window, worst %s ms",
 			render.BinLabel(binSeconds), render.Compact(shape.Duration.Avg()), render.Compact(shape.Duration.Max)),
 	})
 	out := []string{cost}
 
 	if waited := waitTotalOf(shape); shape.Duration.Sum > 0 && waited/shape.Duration.Sum >= chartableWait {
-		out = append(out, gnuplotPanel([]series.Series{
+		out = append(out, barPanel([]series.Series{
 			binSeries("avg wait ms", folded, analyze.Bin.AvgWait, first, last, binSeconds),
 			binSeries("avg ms", folded, analyze.Bin.Avg, first, last, binSeconds),
-		}, render.PanelOptions{
-			Width: width, Height: detailChartRows, Color: color, First: from, Last: to,
+		}, render.BarOptions{
+			Width: width, Height: detailChartRows, First: from, Last: to,
 			// The duration is kept on this panel as the second line, because a wait means nothing
 			// on its own: 1.5 seconds of waiting is everything on a 1.6-second operation and
 			// nothing on a minute-long one. The gap between the two lines is the work.
@@ -227,10 +227,10 @@ func shapeChart(shape analyze.Shape, first, last time.Time, binSeconds int64, wi
 		}))
 	}
 
-	runs := gnuplotPanel([]series.Series{
+	runs := barPanel([]series.Series{
 		binSeries("executions", folded, func(bin analyze.Bin) float64 { return float64(bin.Count) }, first, last, binSeconds),
-	}, render.PanelOptions{
-		Width: width, Height: detailChartRows - 3, Color: color, First: from, Last: to,
+	}, render.BarOptions{
+		Width: width, Height: detailChartRows - 1, First: from, Last: to,
 		Title: fmt.Sprintf("Executions per %s  ·  %s in the window", render.BinLabel(binSeconds), render.Compact(float64(shape.Count))),
 	})
 	out = append(out, runs)

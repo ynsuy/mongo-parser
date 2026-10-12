@@ -14,7 +14,7 @@ import (
 
 // slowChartRows is the plot height the timeline gets. It is one chart on a page of table, so it can
 // afford more rows than a panel on a board of them.
-const slowChartRows = 7
+const slowChartRows = 4
 
 // slowTimeline draws when the slow queries happened, above the table that says what they were.
 //
@@ -30,7 +30,7 @@ func slowTimeline(shapes []analyze.Shape, first, last time.Time, binSeconds int6
 	if len(shapes) == 0 || !last.After(first) {
 		return ""
 	}
-	slots := render.PanelBins(width)
+	slots := render.BarColumns(width)
 	if binSeconds <= 0 {
 		binSeconds = metrics.AutoBucketSecondsFor(last.Sub(first), analyze.TimelineStep, slots)
 	}
@@ -73,8 +73,8 @@ func slowTimeline(shapes []analyze.Shape, first, last time.Time, binSeconds int6
 	// its length in the same cells as whichever plan dominates — a chart of overlap marks — and it
 	// says nothing the top of the lines below it does not already say.
 	from, to := float64(alignDown(first, binSeconds).UnixMilli()), float64(alignDown(last, binSeconds).UnixMilli())
-	chart := gnuplotPanel(rows, render.PanelOptions{
-		Width: width, Height: slowChartRows, Color: color, First: from, Last: to,
+	chart := barPanel(rows, render.BarOptions{
+		Width: width, Height: slowChartRows, First: from, Last: to,
 		Title: fmt.Sprintf("Slow queries per %s  ·  %s in the window",
 			render.BinLabel(binSeconds), render.Compact(float64(total))),
 	})

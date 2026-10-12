@@ -127,15 +127,7 @@ func runLabel(root string, args []string) error {
 			if *chart {
 				plotted := labelSignalSeries(r.Rule(), node, r.Instance, samples, start, end, *bin, outputWidth(c.width))
 				entry.SignalSeries = &plotted
-				chartText, chartErr := render.GnuplotReport([]series.Series{plotted}, render.GnuplotOptions{Width: outputWidth(c.width), Height: 8})
-				if chartErr != nil {
-					if !c.json {
-						return chartErr
-					}
-					notes = append(notes, chartErr.Error())
-				} else {
-					body = chartText + "\n\n" + body
-				}
+				body = render.BarChart([]series.Series{plotted}, render.BarOptions{Width: outputWidth(c.width), Height: chartHeight}) + "\n\n" + body
 			}
 			entries = append(entries, entry)
 			sections = append(sections, body)
@@ -169,7 +161,7 @@ func labelSignalSeries(rule label.Rule, node, instance string, samples *ftdc.Sam
 		derived.Timestamps = append(derived.Timestamps, point.At.UnixMilli())
 		derived.Values[path] = append(derived.Values[path], point.Value)
 	}
-	plotted := metrics.Build(derived, node, path, metrics.Options{From: from, To: to, Mode: "gauge", BucketSeconds: bin, TargetBins: width - 14})
+	plotted := metrics.Build(derived, node, path, metrics.Options{From: from, To: to, Mode: "gauge", BucketSeconds: bin, TargetBins: render.BarColumns(width)})
 	plotted.Label = strings.TrimSpace(rule.Name+" "+instance) + " [" + rule.Signal.Unit + "]"
 	plotted.Unit = rule.Signal.Unit
 	plotted.Mode = "derived signal"
@@ -227,7 +219,7 @@ func renderOpened(o funnel.Opened, options render.TableOptions) string {
 	}
 	lines = append(lines, "",
 		fmt.Sprintf("usual %s · worst minute %s at %s · worst second %s · %s",
-			levelReading(r, r.Typical), levelReading(r, r.Peak), r.PeakAt.Format("15:04"), worstSecondOf(r), r.Shape),
+			levelReading(r, r.Typical), levelReading(r, r.Peak), r.PeakAt.Format("01-02 15:04"), worstSecondOf(r), r.Shape),
 	)
 	if w := when(r); r.Shape != "steady" && r.Shape != "constant" {
 		lines = append(lines, "when: "+w)
@@ -258,7 +250,7 @@ func worstSecondOf(r label.Result) string {
 	if r.PeakSecondAt.IsZero() {
 		return "-"
 	}
-	return fmt.Sprintf("%s at %s", amount(r.PeakSecond, r.SignalUnit), r.PeakSecondAt.Format("15:04:05"))
+	return secondAt(r.PeakSecond, r.SignalUnit, r.PeakSecondAt)
 }
 
 // markText is what counts a second towards a stretch, in words.
@@ -282,7 +274,7 @@ func stretchTable(o funnel.Opened, options render.TableOptions) string {
 		to = append(to, s.To.Format("15:04:05"))
 		length = append(length, s.Length().Round(time.Second).String())
 		marked = append(marked, fmt.Sprintf("%d s", s.Seconds))
-		worst = append(worst, fmt.Sprintf("%s at %s", amount(s.Worst, unit), s.WorstAt.Format("15:04:05")))
+		worst = append(worst, secondAt(s.Worst, unit, s.WorstAt))
 	}
 	return render.Table([]render.Column{
 		{Title: "From", Values: from}, {Title: "To", Values: to},

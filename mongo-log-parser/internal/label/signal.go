@@ -46,7 +46,7 @@ func Seconds(r Rule, samples *ftdc.Samples, instance string, from, to time.Time)
 	for at, n := range num {
 		if len(r.Signal.Minus) > 0 {
 			m, seen := minus[at]
-			if !seen {
+			if !seen || (r.Signal.Timestamps && (n == 0 || m == 0)) {
 				continue
 			}
 			n -= m

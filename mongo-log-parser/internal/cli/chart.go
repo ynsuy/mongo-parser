@@ -5,12 +5,13 @@ import (
 	"mongo-log-parser/internal/series"
 )
 
-// Existing report/slow panels use the same gnuplot renderer as metrics and label charts.
-// A drawing failure leaves the report's evidence available and is explicit in the terminal.
-func gnuplotPanel(rows []series.Series, options render.PanelOptions) string {
-	chart, err := render.GnuplotReport(rows, render.GnuplotOptions{Width: options.Width, Height: options.Height, Title: options.Title, First: options.First, Last: options.Last})
-	if err != nil {
-		return "Chart unavailable: " + err.Error()
+// barPanel draws report and slow panels as bar strips. A panel of several series halves each
+// strip so the panel stays about as tall as one series.
+func barPanel(rows []series.Series, options render.BarOptions) string {
+	height := options.Height
+	if len(rows) > 1 {
+		height = max(2, height/2)
 	}
-	return chart
+	options.Height = height
+	return render.BarChart(rows, options)
 }
