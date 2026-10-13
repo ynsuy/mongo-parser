@@ -27,13 +27,13 @@ func renderShapes(shapes []analyze.Shape, queries *analyze.SlowQueries, limit in
 		{Title: "Count", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return strconv.Itoa(s.Count) })},
 		{Title: "Total ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.TotalTime()) })},
 		{Title: "Avg ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Duration.Avg()) })},
-		{Title: "P95 ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Duration.Quantile(0.95)) }), Drop: 3},
-		{Title: "Keys", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Keys) }), Drop: 2},
-		{Title: "Docs", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Docs) }), Drop: 4},
-		{Title: "Ret", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Returned) }), Drop: 3},
-		{Title: "Ineff", Align: render.AlignRight, Values: field(shown, inefficiency), Drop: 1},
+		{Title: "P95 ms", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return render.Compact(s.Duration.Quantile(0.95)) })},
+		{Title: "Keys", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Keys) })},
+		{Title: "Docs", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Docs) })},
+		{Title: "Ret", Align: render.AlignRight, Values: field(shown, func(s analyze.Shape) string { return loggedAvg(s.Returned) })},
+		{Title: "Ineff", Align: render.AlignRight, Values: field(shown, inefficiency)},
 		{Title: "Outcome", Values: field(shown, func(s analyze.Shape) string { return s.Outcome() })},
-		{Title: "Spent on", Values: field(shown, spentOn), Drop: 5},
+		{Title: "Spent on", Values: field(shown, spentOn)},
 		{Title: "Query hash", Values: field(shown, func(s analyze.Shape) string { return s.Label() })},
 	}, options)
 	total, waits := queries.WaitTotals()
@@ -117,20 +117,17 @@ func renderNodes(nodes []analyze.Node, limit int, options render.TableOptions) s
 	}
 	return render.Table([]render.Column{
 		{Title: "Node", Align: render.AlignTail, Values: sources},
-		// Drop order is what survives a narrow terminal, so it is the order these matter in. A set
-		// that stepped down dozens of times and a set that rolled back are the two things this section
-		// exists to report; sync source changes and chunk counts go first.
-		{Title: "Ended as", Values: field2(shown, func(n analyze.Node) string { return orDash(n.LastState) }), Drop: 7},
+		{Title: "Ended as", Values: field2(shown, func(n analyze.Node) string { return orDash(n.LastState) })},
 		{Title: "States seen", Values: states, Elastic: true},
 		{Title: "Elections", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.ElectionsCalled })},
 		{Title: "Won", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.ElectionsWon })},
 		{Title: "Stepdowns", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.StepDowns })},
 		{Title: "Rollbacks", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.Rollbacks })},
-		{Title: "HB fail", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.HeartbeatFailures }), Drop: 6},
-		{Title: "Init sync", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.InitialSyncs }), Drop: 5},
-		{Title: "Migr err", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.MigrationErrors }), Drop: 4},
-		{Title: "Chunks", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.ChunkMigrations }), Drop: 2},
-		{Title: "Sync src", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.SyncSourceChange }), Drop: 1},
+		{Title: "HB fail", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.HeartbeatFailures })},
+		{Title: "Init sync", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.InitialSyncs })},
+		{Title: "Migr err", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.MigrationErrors })},
+		{Title: "Chunks", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.ChunkMigrations })},
+		{Title: "Sync src", Align: render.AlignRight, Values: number(func(n analyze.Node) int { return n.SyncSourceChange })},
 	}, options)
 }
 
@@ -175,11 +172,11 @@ func renderGroups(groups []analyze.Group, limit int, options render.TableOptions
 		return values
 	}
 	return render.Table([]render.Column{
-		{Title: "Group", Values: text(func(g analyze.Group) string { return g.ID }), Drop: 4},
+		{Title: "Group", Values: text(func(g analyze.Group) string { return g.ID })},
 		{Title: "Sev", Values: text(func(g analyze.Group) string { return g.Severity })},
-		{Title: "Component", Values: text(func(g analyze.Group) string { return g.Component }), Drop: 3},
+		{Title: "Component", Values: text(func(g analyze.Group) string { return g.Component })},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(g analyze.Group) string { return strconv.Itoa(g.Count) })},
-		{Title: "Category", Values: text(func(g analyze.Group) string { return string(g.Category) }), Drop: 1},
+		{Title: "Category", Values: text(func(g analyze.Group) string { return string(g.Category) })},
 		{Title: "Message", Values: text(func(g analyze.Group) string { return g.Message }), Elastic: true},
 	}, options)
 }

@@ -153,7 +153,7 @@ func renderClonedCollections(rebuild analyze.Rebuild, limit int, options render.
 				return "-"
 			}
 			return fmt.Sprintf("%.1f%%", c.Bytes/rebuild.TotalBytes*100)
-		}), Drop: 3},
+		})},
 		{Title: "Documents", Align: render.AlignRight, Values: text(func(c analyze.ClonedCollection) string {
 			return render.Compact(c.Documents)
 		})},
@@ -162,7 +162,7 @@ func renderClonedCollections(rebuild analyze.Rebuild, limit int, options render.
 				return "-"
 			}
 			return render.Amount(c.Bytes/c.Documents, series.UnitBytes)
-		}), Drop: 2},
+		})},
 		// The index count is what a rebuild actually costs: every one of them is built again on the
 		// node being seeded, after the documents land.
 		{Title: "Indexes", Align: render.AlignRight, Values: text(func(c analyze.ClonedCollection) string {
@@ -173,7 +173,7 @@ func renderClonedCollections(rebuild analyze.Rebuild, limit int, options render.
 				return "-"
 			}
 			return render.Duration(time.Duration(c.Millis) * time.Millisecond)
-		}), Drop: 1},
+		})},
 		// How far this collection's copy got, rather than whether it finished. The finished flag is
 		// an end stamp, and a truncated line is exactly where the server drops one — so a
 		// collection that was copied would read as still running because its stamp did not fit.
@@ -213,10 +213,10 @@ func renderSyncAttempts(rebuild analyze.Rebuild, options render.TableOptions) st
 		})},
 		{Title: "Source", Align: render.AlignTail, Values: text(func(_ int, a analyze.SyncAttempt) string {
 			return orDash(a.SyncSource)
-		}), Drop: 2},
+		})},
 		{Title: "Unreachable", Align: render.AlignRight, Values: text(func(_ int, a analyze.SyncAttempt) string {
 			return render.Duration(time.Duration(a.Unreachable) * time.Millisecond)
-		}), Drop: 1},
+		})},
 		{Title: "Ended on", Elastic: true, Values: text(func(_ int, a analyze.SyncAttempt) string {
 			if !a.Failed() {
 				return "completed"

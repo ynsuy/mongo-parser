@@ -3,6 +3,7 @@
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "medium",
   "quietStartup": true,
+  "hideThinkingBlock": true,
   "enableInstallTelemetry": false,
   "compaction": { "enabled": true, "reserveTokens": 16384, "keepRecentTokens": 6000 },
   "skills": ["skills"],

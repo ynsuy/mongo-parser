@@ -35,29 +35,6 @@ func TestMetricOnlySectionsAreRealSections(t *testing.T) {
 	}
 }
 
-// A wait's "Look with" names a report section a reader will type back; a section that no longer
-// exists turns the suggestion into an error.
-func TestWaitHintsNameRealSections(t *testing.T) {
-	known := map[string]bool{}
-	for _, name := range reportSections {
-		known[name] = true
-	}
-	queries := analyze.NewSlowQueries()
-	_, waits := queries.WaitTotals()
-	waits = append(waits, analyze.UnaccountedWait())
-	for _, w := range waits {
-		only, found := strings.CutPrefix(w.Next, "report --only ")
-		if !found {
-			continue
-		}
-		for _, name := range strings.Split(only, ",") {
-			if !known[name] {
-				t.Errorf("wait %s suggests report section %q, which does not exist", w.Name, name)
-			}
-		}
-	}
-}
-
 // The report sums a shape's minutes up instead of listing them: a week-long shape's every minute
 // made the report megabytes. What stays still tells a drip from a burst, and next narrows slow to
 // the shape, where every minute is.

@@ -88,7 +88,7 @@ func runPrune(_ string, args []string) error {
 				return "removed"
 			}
 			return ""
-		}), Drop: 1},
+		})},
 	}, options)
 
 	var note string

@@ -41,7 +41,7 @@ func (m Minute) Value(r Rule) float64 {
 // minute is also dropped when its divisor summed to less than the rule's min_den.
 func Minutes(r Rule, seconds []Second) []Minute {
 	type acc struct {
-		num, den, minus float64
+		num, den        float64
 		max, min        float64
 		past, n, valued int
 	}

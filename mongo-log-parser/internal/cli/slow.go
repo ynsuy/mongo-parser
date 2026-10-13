@@ -122,15 +122,15 @@ func runSlow(root string, args []string) error {
 		{Title: "Count", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return strconv.Itoa(s.Count) })},
 		{Title: "Total ms", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Compact(s.TotalTime()) })},
 		{Title: "Avg ms", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Compact(s.Duration.Avg()) })},
-		{Title: "P95 ms", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Compact(s.Duration.Quantile(0.95)) }), Drop: 5},
+		{Title: "P95 ms", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Compact(s.Duration.Quantile(0.95)) })},
 		{Title: "Max ms", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Compact(s.Duration.Max) })},
-		{Title: "Keys", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Keys) }), Drop: 4},
-		{Title: "Docs", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Docs) }), Drop: 3},
-		{Title: "Ret", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Returned) }), Drop: 7},
-		{Title: "Ineff", Align: render.AlignRight, Values: field(shapes, inefficiency), Drop: 2},
-		{Title: "Read", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Amount(s.BytesRead.Avg(), series.UnitBytes) }), Drop: 1},
+		{Title: "Keys", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Keys) })},
+		{Title: "Docs", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Docs) })},
+		{Title: "Ret", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return loggedAvg(s.Returned) })},
+		{Title: "Ineff", Align: render.AlignRight, Values: field(shapes, inefficiency)},
+		{Title: "Read", Align: render.AlignRight, Values: field(shapes, func(s analyze.Shape) string { return render.Amount(s.BytesRead.Avg(), series.UnitBytes) })},
 		{Title: "Outcome", Values: field(shapes, func(s analyze.Shape) string { return s.Outcome() })},
-		{Title: "Spent on", Values: field(shapes, spentOn), Drop: 6},
+		{Title: "Spent on", Values: field(shapes, spentOn)},
 		{Title: "Query hash", Values: field(shapes, func(s analyze.Shape) string { return s.Label() })},
 	}
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColour}
@@ -183,7 +183,7 @@ func runSlow(root string, args []string) error {
 		if total := queries.TotalTime(); total > 0 {
 			share = failedMillis / total
 		}
-		footer += fmt.Sprintf("\n%d of the logged operations failed and hold %.0f%% of the logged operation time (%s ms): %s. A duration says how long an operation ran, never whether it worked.",
+		footer += fmt.Sprintf("\n%d of the logged operations failed and hold %.0f%% of the logged operation time (%s ms): %s.",
 			failedRuns, share*100, render.Compact(failedMillis), topErrors(byName))
 	}
 	if detail && len(matched) > 1 {

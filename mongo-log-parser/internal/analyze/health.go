@@ -33,7 +33,6 @@ type Signal struct {
 	// the text it matched in, so a match on a line's error attributes is not shown beside a message
 	// that never says what was matched.
 	Examples []MatchExample `json:"examples,omitempty"`
-	Next     string         `json:"next,omitempty"`
 }
 
 // MatchExample is one line a signal matched, and what in it matched.
@@ -69,7 +68,6 @@ type rule struct {
 	key      string
 	title    string
 	severity string
-	next     string
 	any      []string // the message matches if it contains any of these
 	not      []string // ...and none of these
 	all      []string // ...and all of these
@@ -79,70 +77,48 @@ type rule struct {
 // comes before the general one it would otherwise be swallowed by.
 var rules = []rule{
 	{key: "assertion", title: "assertion, signal or termination text matched", severity: "high",
-		next: "logs --category other",
-		any:  []string{"fassert", "invariant failure", "terminate() called", "got signal", "aborting after", "unhandled exception"}},
-	{key: "disk", title: "storage error text matched", severity: "high", next: "logs --category storage",
+		any: []string{"fassert", "invariant failure", "terminate() called", "got signal", "aborting after", "unhandled exception"}},
+	{key: "disk", title: "storage error text matched", severity: "high",
 		any: []string{"no space left", "disk full", "quota exceeded", "input/output error", "read-only file system"}},
 	{key: "oom", title: "allocation or out-of-memory text matched", severity: "high",
-		next: "metrics --metric 'system/memory/*'",
-		any:  []string{"out of memory", "cannot allocate memory", "bad_alloc", "oom"}},
+		any: []string{"out of memory", "cannot allocate memory", "bad_alloc", "oom"}},
 	{key: "too_stale", title: "staleness or rollback-size text matched", severity: "high",
-		next: "logs --category replication",
-		any:  []string{"too stale", "rollback too large", "we are too far behind"}},
-	{key: "rollback_files", title: "rollback-file text matched", severity: "medium",
-		next: "logs --category recovery", any: []string{"rollback file", "writing rollback file"}},
+		any: []string{"too stale", "rollback too large", "we are too far behind"}},
+	{key: "rollback_files", title: "rollback-file text matched", severity: "medium", any: []string{"rollback file", "writing rollback file"}},
 	{key: "heartbeat", title: "heartbeat failure or retry text matched", severity: "medium",
-		next: "logs --category replication",
-		all:  []string{"heartbeat"}, any: []string{"fail", "error", "timed out", "timeout", "retries"}},
+		all: []string{"heartbeat"}, any: []string{"fail", "error", "timed out", "timeout", "retries"}},
 	{key: "member_unreachable", title: "member reachability or primary-selection text matched", severity: "medium",
-		next: "logs --category replication",
-		any:  []string{"is now in state rs_down", "is now in state rs_unknown", "no primary detected", "could not find host matching read preference"}},
+		any: []string{"is now in state rs_down", "is now in state rs_unknown", "no primary detected", "could not find host matching read preference"}},
 	{key: "auth_failure", title: "authentication failure or unknown-user text matched", severity: "medium",
-		next: "logs --category authentication",
-		any:  []string{"authentication failed", "failed to authenticate", "auth: something", "supported sasl mechanisms requested for unknown user"}},
-	{key: "unauthorized", title: "authorization refusal text matched", severity: "low",
-		next: "logs --category authentication", any: []string{"not authorized on", "unauthorized"}},
-	{key: "write_conflict", title: "write-conflict text matched", severity: "medium",
-		next: "slow", any: []string{"writeconflict", "write conflict"}},
-	{key: "transaction_abort", title: "transaction abort text matched", severity: "low",
-		next: "logs --category other", all: []string{"transaction"}, any: []string{"abort"}},
+		any: []string{"authentication failed", "failed to authenticate", "auth: something", "supported sasl mechanisms requested for unknown user"}},
+	{key: "unauthorized", title: "authorization refusal text matched", severity: "low", any: []string{"not authorized on", "unauthorized"}},
+	{key: "write_conflict", title: "write-conflict text matched", severity: "medium", any: []string{"writeconflict", "write conflict"}},
+	{key: "transaction_abort", title: "transaction abort text matched", severity: "low", all: []string{"transaction"}, any: []string{"abort"}},
 	{key: "lock_timeout", title: "lock-acquisition or lock-error text matched", severity: "medium",
-		next: "metrics --metric 'globalLock/*'",
-		any:  []string{"lock acquisition", "lockbusy", "locktimeout", "lock timeout"}},
+		any: []string{"lock acquisition", "lockbusy", "locktimeout", "lock timeout"}},
 	// An operation the client gave a maxTimeMS and that ran past it. It is not a lock: the time may
 	// have gone anywhere, and the slow query line says where. "Client's executor exceeded time
 	// limit" is a different message altogether — the server noting a few microseconds of overrun
 	// in its own scheduling — and is not a client's operation at all.
 	{key: "max_time", title: "operation time-limit text matched", severity: "medium",
-		next: "slow --failed",
-		any:  []string{"maxtimemsexpired", "operation exceeded time limit"},
-		not:  []string{"executor exceeded time limit"}},
-	{key: "cursor_timeout", title: "cursor timeout or kill text matched", severity: "low",
-		next: "logs --category query", all: []string{"cursor"}, any: []string{"timed out", "timeout", "killing"}},
+		any: []string{"maxtimemsexpired", "operation exceeded time limit"},
+		not: []string{"executor exceeded time limit"}},
+	{key: "cursor_timeout", title: "cursor timeout or kill text matched", severity: "low", all: []string{"cursor"}, any: []string{"timed out", "timeout", "killing"}},
 	{key: "killed_op", title: "operation interruption or kill text matched", severity: "low",
-		next: "logs --category query",
-		any:  []string{"interrupted operation", "operation was interrupted", "killop", "operation killed"}},
+		any: []string{"interrupted operation", "operation was interrupted", "killop", "operation killed"}},
 	{key: "network_error", title: "network, reachability or connection-pool text matched", severity: "medium",
-		next: "logs --category network",
-		any:  []string{"connection refused", "hostunreachable", "host unreachable", "socket exception", "connection reset by peer", "network error while", "networkinterfaceexceededtimelimit", "connection pool"}},
+		any: []string{"connection refused", "hostunreachable", "host unreachable", "socket exception", "connection reset by peer", "network error while", "networkinterfaceexceededtimelimit", "connection pool"}},
 	{key: "stale_config", title: "routing metadata or refresh text matched", severity: "medium",
-		next: "logs --category sharding",
-		any:  []string{"staleconfig", "stale config", "stalechunkhistory", "stale shard version", "chunk metadata refresh"}},
-	{key: "jumbo_chunk", title: "jumbo or chunk-size text matched", severity: "medium",
-		next: "logs --category sharding", any: []string{"jumbo", "chunk too big"}},
+		any: []string{"staleconfig", "stale config", "stalechunkhistory", "stale shard version", "chunk metadata refresh"}},
+	{key: "jumbo_chunk", title: "jumbo or chunk-size text matched", severity: "medium", any: []string{"jumbo", "chunk too big"}},
 	{key: "balancer_off", title: "balancer state or failure text matched", severity: "low",
-		next: "logs --category sharding",
-		all:  []string{"balancer"}, any: []string{"stopped", "disabled", "off", "failed"}},
+		all: []string{"balancer"}, any: []string{"stopped", "disabled", "off", "failed"}},
 	{key: "slow_storage", title: "storage timing, eviction or cache-wait text matched", severity: "medium",
-		next: "metrics --metric 'wiredTiger/*'",
-		any:  []string{"took too long", "slow operation", "checkpoint took", "unable to evict", "cache eviction", "waiting for cache"},
-		not:  []string{"slow query"}},
-	{key: "clock", title: "system-time or clock text matched", severity: "medium",
-		next: "logs --category other", any: []string{"clock skew", "time jump", "system time", "clock drift"}},
-	{key: "connection_accepted", title: "connection-accepted text matched", severity: "low",
-		next: "metrics --metric 'connections/*'", any: []string{"connection accepted"}},
-	{key: "connection_ended", title: "connection-ended text matched", severity: "low",
-		next: "metrics --metric 'connections/*'", any: []string{"connection ended"}},
+		any: []string{"took too long", "slow operation", "checkpoint took", "unable to evict", "cache eviction", "waiting for cache"},
+		not: []string{"slow query", "failed to gather storage statistics"}},
+	{key: "clock", title: "system-time or clock text matched", severity: "medium", any: []string{"clock skew", "time jump", "system time", "clock drift"}},
+	{key: "connection_accepted", title: "connection-accepted text matched", severity: "low", any: []string{"connection accepted"}},
+	{key: "connection_ended", title: "connection-ended text matched", severity: "low", any: []string{"connection ended"}},
 }
 
 // errorAttributes is the part of a log line's attributes that carries the reason something failed.
@@ -191,14 +167,13 @@ func (h *Health) Add(record Record) {
 		if record.Sev != "F" {
 			return
 		}
-		h.count(Signal{Key: "fatal", Title: "the server logged a fatal line", Priority: "high",
-			Next: "logs --category " + string(Classify(record))}, record, "logged_severity_F", func() MatchExample {
+		h.count(Signal{Key: "fatal", Title: "the server logged a fatal line", Priority: "high"}, record, "logged_severity_F", func() MatchExample {
 			return MatchExample{}
 		})
 		return
 	}
 	matched := rules[index]
-	h.count(Signal{Key: matched.key, Title: matched.title, Priority: matched.severity, Next: matched.next,
+	h.count(Signal{Key: matched.key, Title: matched.title, Priority: matched.severity,
 		MatchAny: matched.any, MatchAll: matched.all, MatchNot: matched.not}, record, basis, func() MatchExample {
 		if basis == "message_text" {
 			return MatchExample{Matched: matched.found(strings.ToLower(record.Msg))}

@@ -23,18 +23,12 @@ func runMetrics(root string, args []string) error {
 	binSeconds := flags.Int64("bin", 0, "bin size in seconds; chosen from the window by default")
 	height := flags.Int("height", chartHeight, "bar rows per stream")
 	list := flags.Bool("list", false, "list the metrics worth charting, by group, instead of drawing them")
-	overlay := flags.Bool("overlay", false, "accepted for compatibility; every stream of a metric is drawn on one panel")
-	grid := flags.Bool("grid", false, "accepted for compatibility; every stream of a metric is drawn on one panel")
-	color := flags.String("color", "never", "never (default), auto or always")
 	words, err := parse(flags, args)
 	if err != nil {
 		return err
 	}
 	if err := bounded(bound{"top", *top, 1}, bound{"height", *height, 1}, bound{"bin", int(*binSeconds), 0}); err != nil {
 		return err
-	}
-	if *overlay && *grid {
-		return fmt.Errorf("--overlay and --grid are two layouts; ask for one")
 	}
 
 	started := time.Now()
@@ -90,9 +84,7 @@ func runMetrics(root string, args []string) error {
 		return err
 	}
 
-	// The plot sits inside the table, past the value-axis gutter; bins are chosen to fill it. A
-	// grid's plot is one panel wide, not one table wide, so it asks for its own count: binning to
-	// the terminal and then folding four bins into every column throws away the peak of three.
+	// The plot sits inside the table, past the value-axis gutter; bins are chosen to fill it.
 	plotWidth := render.BarColumns(outputWidth(c.width))
 	options := metrics.Options{From: start, To: end, BucketSeconds: *binSeconds, TargetBins: plotWidth}
 	perMetric := make(map[string][]series.Series, len(order))
@@ -112,9 +104,7 @@ func runMetrics(root string, args []string) error {
 		return fmt.Errorf("no metrics matched; try --metric or a wider window")
 	}
 
-	// A panel per metric, a strip per stream on one scale. --overlay, --grid and --color are
-	// accepted for compatibility; bars already stack every stream of a metric together.
-	_, _, _ = overlay, grid, color
+	// A panel per metric, a strip per stream on one scale.
 	rendered := render.BarChart(drawn, render.BarOptions{Width: outputWidth(c.width), Height: *height})
 	var notes []string
 	footer := fmt.Sprintf("%d chunks indexed across %s; %s; decode and render in %s",

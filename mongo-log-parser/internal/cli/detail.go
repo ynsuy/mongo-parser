@@ -133,14 +133,14 @@ func distribution(shape analyze.Shape, options render.TableOptions) string {
 	}
 	table := render.Table([]render.Column{
 		{Title: "Measure", Values: column(func(m measure) string { return m.name })},
-		{Title: "N", Align: render.AlignRight, Values: column(func(m measure) string { return strconv.Itoa(m.numbers.Count) }), Drop: 5},
+		{Title: "N", Align: render.AlignRight, Values: column(func(m measure) string { return strconv.Itoa(m.numbers.Count) })},
 		{Title: "Min", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Min, m.unit) })},
 		{Title: "Avg", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Avg(), m.unit) })},
-		{Title: "P50", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.50), m.unit) }), Drop: 3},
-		{Title: "P95", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.95), m.unit) }), Drop: 2},
-		{Title: "P99", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.99), m.unit) }), Drop: 4},
+		{Title: "P50", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.50), m.unit) })},
+		{Title: "P95", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.95), m.unit) })},
+		{Title: "P99", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Quantile(0.99), m.unit) })},
 		{Title: "Max", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Max, m.unit) })},
-		{Title: "Total", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Sum, m.unit) }), Drop: 1},
+		{Title: "Total", Align: render.AlignRight, Values: column(func(m measure) string { return amount(m.numbers.Sum, m.unit) })},
 	}, options)
 	notes := []string{table, "Min, max, count and total are exact; the percentiles are approximate."}
 	if len(empty) > 0 {

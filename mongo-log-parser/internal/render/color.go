@@ -5,11 +5,10 @@ package render
 type ansi string
 
 const (
-	plain  ansi = ""
-	dim    ansi = "\x1b[2m"
-	bold   ansi = "\x1b[1m"
-	accent ansi = "\x1b[36m" // the chart, so the shape stands out from its numbers
-	reset  ansi = "\x1b[0m"
+	plain ansi = ""
+	dim   ansi = "\x1b[2m"
+	bold  ansi = "\x1b[1m"
+	reset ansi = "\x1b[0m"
 )
 
 // painter returns a styling function; with colour off it hands text back untouched, which is what

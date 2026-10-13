@@ -47,14 +47,12 @@ func stallTable(items []funnel.Item, options render.TableOptions) string {
 	return render.Table([]render.Column{
 		{Title: "Node", Values: text(func(i funnel.Item) string { return i.Source }), Elastic: true},
 		{Title: "Label", Values: text(func(i funnel.Item) string { return strings.TrimSpace(i.Label + " " + i.Instance) })},
-		// The columns a narrow terminal loses first are the ones the opened label repeats in full:
-		// what moved with it, then the usual level. Why it is listed, and its worst second, go last.
-		{Title: "Usual", Values: text(func(i funnel.Item) string { return levelReading(i.Result, i.Typical) }), Drop: 2},
+		{Title: "Usual", Values: text(func(i funnel.Item) string { return levelReading(i.Result, i.Typical) })},
 		{Title: "Worst minute", Values: text(func(i funnel.Item) string { return levelReading(i.Result, i.Peak) })},
-		{Title: "Worst second", Values: text(worstSecond), Drop: 4},
-		{Title: "When", Values: text(func(i funnel.Item) string { return when(i.Result) }), Drop: 3},
-		{Title: "Why", Values: text(func(i funnel.Item) string { return strings.Join(i.Why, "; ") }), Drop: 5},
-		{Title: "Moved with", Values: text(func(i funnel.Item) string { return movedWith(i.Result) }), Drop: 1},
+		{Title: "Worst second", Values: text(worstSecond)},
+		{Title: "When", Values: text(func(i funnel.Item) string { return when(i.Result) })},
+		{Title: "Why", Values: text(func(i funnel.Item) string { return strings.Join(i.Why, "; ") })},
+		{Title: "Moved with", Values: text(func(i funnel.Item) string { return movedWith(i.Result) })},
 	}, options)
 }
 

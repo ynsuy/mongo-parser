@@ -3,8 +3,8 @@
 A Pi terminal agent for MongoDB support bundles. It reads nothing itself: every answer comes from
 `mongo-log-parser`, the Go tool in the directory beside this one in the same repository, which reads the bundle — logs, log
 exports, FTDC, shell printouts and configs, in any mix of directories and archives — once into a
-local store and draws its own tables and charts. The agent runs it, shows what it drew, and reasons
-about it in words.
+local store and answers from it. The agent reads the parser's structured answers and writes up what
+happened as numbered findings with an overall assessment.
 
 Requires Go 1.26+, Node.js 22.19.0+ and npm, plus Bash (macOS, Linux, or WSL).
 Run these commands from the repository root after [cloning the repository](../README.md#install-and-run):
@@ -38,21 +38,20 @@ follows them down to the seconds, the slow query shapes and the log lines. It di
 supporting evidence from an unconfirmed cause.
 
 The agent has no shell and no file access at all, so no number can come from anywhere but the
-parser. The model is chosen per session — OpenAI through a Codex subscription, or a local one.
+parser. The model is chosen per session; the default is OpenAI through a Codex subscription.
 
 ## Codex model
 
 The default is `openai-codex/gpt-5.5`, with medium reasoning. Override it with
 `DBA_PROVIDER=<provider-id> DBA_MODEL=<model-id> pidba`, or select a model with `/model`.
-Credentials live in the separate, git-ignored `.pi/codex-agent` directory. Ollama is not needed.
+Credentials live in the separate, git-ignored `.pi/codex-agent` directory.
 
 **Model requests go to OpenAI, and the bundle's contents go with them.** The parser runs locally,
 but its structured evidence — hostnames, namespaces, paths, application names, log text — is sent to the
 selected model as written. There is no masking layer: an earlier version of this agent replaced
 those names with local identifiers, and that was removed deliberately. Point this at a customer
 bundle only where sending that customer's operational data to OpenAI is something you are allowed
-to do; for anything else, run `mongo-log-parser` yourself in a terminal, or switch the session to a
-local model. `--offline` disables Pi startup update checks; it does not disable model networking.
+to do; for anything else, run `mongo-log-parser` yourself in a terminal. `--offline` disables Pi startup update checks; it does not disable model networking.
 
 The launcher builds the parser from `../mongo-log-parser` into this project's `bin/` directory, with
 a version stamped into it. Override the source with `MONGO_LOG_PARSER_SRC`, or use an existing
@@ -91,9 +90,10 @@ A slow operation and a busy one can print the same duration. `mongo_slow` summar
 fields; these guide investigation but do not settle cause or exclude query/workload contributions.
 Compare with FTDC only where node identity and time coverage support it.
 
-The model receives all structured evidence in `data`, with command and evidence metadata, as JSON.
-Rendered tables and charts stay in the terminal and are excluded from model content. No structured
-fields are sampled or cut. An answer larger than a quarter of the model's context
+The model receives the parser's structured evidence in `data`, with command and evidence metadata, as
+JSON; the parser's rendered tables and charts stay in the terminal and do not reach the model. Tool
+activity and thinking are hidden by default; expanding a tool shows the parser's own output.
+No structured field is sampled or cut. An answer larger than a quarter of the model's context
 window (at most 512 KiB, at least 64 KiB) arrives in pages; the first names the result and the page
 count, and `mongo_page` returns the rest. The pages joined are the structured JSON byte for byte. Automatic
 compaction still summarizes older turns once the session fills the window (16,384 tokens are
@@ -104,7 +104,7 @@ source/context and logged waits. They are the slowest examples of the costliest 
 representative of all operations; no defaults are inferred.
 
 Parser descriptions and log-pattern titles report observations, not preset causes or fixes.
-`evidence_policy` accompanies tool data. Log signals separate `review_priority` from actual
+Log signals separate `review_priority` from actual
 `log_severities` and expose pattern/provenance fields. Incident reporting includes isolated extrema
 alongside main hypotheses; cited slow shapes include observed count and time bounds. A single logged
 slow execution is not a total workload frequency or proof of a recurring problem. Aggregate FTDC
@@ -116,18 +116,12 @@ wording safeguards and unit tests are not end-to-end RCA validation.
 `mongo_metrics` takes several streams. Each is read over the same window and charted against the
 same value axis, because two nodes drawn to their own scales look alike however far apart their
 numbers are. The JSON identifies every stream, and a metric that appears has a row for every node.
-PIDBA answers use bar charts in the parser's style, or tables, from the structured values, with
-labelled units, UTC times, aggregation and gaps; node comparisons use a shared scale, a strip per node.
-
-By default each stream gets its own chart under a shared axis. `overlay` puts them on one chart,
-which is the view for finding the moment two nodes stopped agreeing. Where lines cross, the one
-listed first in the legend keeps the cell.
 
 From a terminal the same thing is:
 
 ```bash
 ../mongo-log-parser/bin/mongo-log-parser metrics /data/mongodb --source all \
-  --metric 'wiredTiger/cache/bytes read into cache' --overlay
+  --metric 'wiredTiger/cache/bytes read into cache'
 ```
 
 ## What reaches the model
@@ -155,15 +149,15 @@ Ask the agent to filter by a reported query hash, or use the parser directly:
 ../mongo-log-parser/bin/mongo-log-parser slow /data/mongodb --query-hash ABC123EF
 ```
 
-Structured `notes` preserve unavailable-label reasons and FTDC decode warnings even though
-`render` is excluded from model content. Parser rankings, sampled examples and time bins retain
+Structured `notes` preserve unavailable-label reasons and FTDC decode warnings. Parser rankings, sampled examples and time bins retain
 their scope; paging preserves all returned JSON, not every raw record in the bundle.
 
 Parser tool calls run sequentially to protect the shared cache during its first ingest. Tool errors
 show the parser's actual diagnostic instead of only `failed`.
 
-RCA answers lead with the main assessment, then explain it with selective time charts and compact
-parser-backed evidence tables. Supporting findings retain the open/notice inventory without giving
-every metric equal space. Headings, depth and ordering follow the user's question and language;
-node aliases are introduced with their full names.
-`mongo_label` with `chart:true` returns the exact derived `signal_series` used for label charts.
+An incident answer is a list of numbered findings followed by an overall assessment. Each finding
+starts with the node and says what was measured, where, when (UTC) and for how long or how many;
+related labels and slow shapes of one interval are folded into one finding, and there is no fixed
+number of findings. Findings describe; cause is weighed only in the overall assessment, which says
+what supports it and what is missing. PIDBA draws no charts or tables of its own. Tool failures
+remain visible even when tool activity is hidden.

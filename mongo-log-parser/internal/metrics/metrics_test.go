@@ -3,25 +3,7 @@ package metrics
 import (
 	"testing"
 	"time"
-
-	"mongo-log-parser/internal/ftdc"
 )
-
-func samplesOf(start time.Time, count int, series map[string][]float64) *ftdc.Samples {
-	samples := &ftdc.Samples{Values: series, Kinds: map[string]string{}}
-	for i := range count {
-		samples.Timestamps = append(samples.Timestamps, start.Add(time.Duration(i)*time.Second).UnixMilli())
-	}
-	return samples
-}
-
-func ramp(count int, base, step float64) []float64 {
-	values := make([]float64, count)
-	for i := range values {
-		values[i] = base + step*float64(i)
-	}
-	return values
-}
 
 func TestAutoBucketSecondsFitsOneBinPerColumn(t *testing.T) {
 	for _, c := range []struct {

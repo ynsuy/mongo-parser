@@ -28,13 +28,13 @@ func renderExecutions(executions []analyze.Execution, options render.TableOption
 	}
 	table := render.Table([]render.Column{
 		{Title: "When", Values: text(func(e analyze.Execution) string { return e.At.Format("01-02 15:04:05") })},
-		{Title: "Node", Align: render.AlignTail, Values: text(func(e analyze.Execution) string { return e.Source }), Drop: 3},
+		{Title: "Node", Align: render.AlignTail, Values: text(func(e analyze.Execution) string { return e.Source })},
 		{Title: "ms", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return render.Compact(e.Millis) })},
-		{Title: "Spent on", Values: text(waitSummary), Drop: 1},
-		{Title: "Docs", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Docs) }), Drop: 4},
-		{Title: "Keys", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Keys) }), Drop: 5},
-		{Title: "Ret", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Returned) }), Drop: 6},
-		{Title: "App", Values: text(func(e analyze.Execution) string { return orDash(e.AppName) }), Drop: 2},
+		{Title: "Spent on", Values: text(waitSummary)},
+		{Title: "Docs", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Docs) })},
+		{Title: "Keys", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Keys) })},
+		{Title: "Ret", Align: render.AlignRight, Values: text(func(e analyze.Execution) string { return loggedValue(e.Returned) })},
+		{Title: "App", Values: text(func(e analyze.Execution) string { return orDash(e.AppName) })},
 	}, options)
 
 	// The command goes under the table rather than in it: it is the longest thing on the line and

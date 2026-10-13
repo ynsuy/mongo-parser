@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestJSONEnvelopeCarriesObservationPolicyWithoutRewritingEvidence(t *testing.T) {
+func TestJSONEnvelopeKeepsEvidenceUnchanged(t *testing.T) {
 	var out bytes.Buffer
 	data := map[string]any{"raw": "Cause: missing index", "count": 1}
 	if err := emit(&out, true, "test", "case", data, "original table"); err != nil {
@@ -17,8 +17,8 @@ func TestJSONEnvelopeCarriesObservationPolicyWithoutRewritingEvidence(t *testing
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.EvidencePolicy != evidencePolicy || got.Render != "original table" || got.Data.(map[string]any)["raw"] != data["raw"] {
-		t.Fatalf("policy or raw evidence lost: %+v", got)
+	if got.Render != "original table" || got.Data.(map[string]any)["raw"] != data["raw"] {
+		t.Fatalf("raw evidence lost: %+v", got)
 	}
 }
 

@@ -35,7 +35,7 @@ severity counts. `review_priority` replaces the former parser-assigned signal `s
 it is a sorting aid, not MongoDB severity or customer impact. Band names are descriptive magnitude
 terms; numeric membership and ranking thresholds are unchanged.
 
-Every JSON envelope carries `evidence_policy`; raw customer text remains unchanged and untrusted.
+Raw customer text in JSON is unchanged and untrusted.
 
 ## Layout
 

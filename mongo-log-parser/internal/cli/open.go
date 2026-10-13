@@ -306,7 +306,7 @@ func renderFocus(o funnel.Opened, f funnel.Focus, options render.TableOptions) s
 	lines = append(lines, render.Table([]render.Column{
 		{Title: "Label", Values: names},
 		{Title: "In these seconds", Values: here},
-		{Title: "Usually", Values: usual, Drop: 1},
+		{Title: "Usually", Values: usual},
 	}, options))
 	if len(f.Seconds) > 0 {
 		lines = append(lines, "", secondsTable(f, options))
@@ -353,7 +353,7 @@ func secondsTable(f funnel.Focus, options render.TableOptions) string {
 	}
 	table := []render.Column{{Title: "Second", Values: at}}
 	for j, name := range columns {
-		table = append(table, render.Column{Title: name, Align: render.AlignRight, Values: values[j], Drop: len(columns) - j})
+		table = append(table, render.Column{Title: name, Align: render.AlignRight, Values: values[j]})
 	}
 	return render.Table(table, options)
 }

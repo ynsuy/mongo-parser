@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -128,10 +129,24 @@ func TestElasticColumnGivesUpTheWidth(t *testing.T) {
 		t.Error("the elastic column was not cut, so the table overflows")
 	}
 
-	// Without the flag the first column still gives, which is what a table of metric paths wants.
+	// Without the flag nothing is cut: the table is printed at its natural width.
 	columns[1].Elastic = false
-	if out := Table(columns, TableOptions{Width: 60}); strings.Contains(out, "critical") {
-		t.Errorf("the default squeeze moved off the first column:\n%s", out)
+	if out := Table(columns, TableOptions{Width: 60}); !strings.Contains(out, "critical") || !strings.Contains(out, long) {
+		t.Errorf("a column without the flag was cut:\n%s", out)
+	}
+}
+
+// A narrow terminal never costs a column: every column given is printed, header and values.
+func TestTableKeepsEveryColumn(t *testing.T) {
+	var columns []Column
+	for i := range 12 {
+		columns = append(columns, Column{Title: fmt.Sprintf("Col%02d", i), Values: []string{fmt.Sprintf("value-%02d", i)}})
+	}
+	out := Table(columns, TableOptions{Width: 40})
+	for _, column := range columns {
+		if !strings.Contains(out, column.Title) || !strings.Contains(out, column.Values[0]) {
+			t.Errorf("%s is missing from a 40-wide table:\n%s", column.Title, out)
+		}
 	}
 }
 

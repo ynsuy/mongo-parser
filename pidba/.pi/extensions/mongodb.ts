@@ -10,7 +10,6 @@ import { ParserRunner } from "../lib/parser-runner.js";
 import { selectPath, directory } from "../lib/data-path.js";
 import { pageBytes, pageHeader, parserResult, ResultPages, type ParserReport } from "../lib/tool-result.js";
 import { compactParserVersion, parseParserVersion, type ParserBuild } from "../lib/version.js";
-import { highlight } from "../lib/highlight.js";
 
 const runFile = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -119,28 +118,33 @@ async function run(command: string, args: string[], signal?: AbortSignal): Promi
 // Every answer that needed more than one page, for mongo_page.
 const pages = new ResultPages();
 
-// Send the parser's structured evidence to the model, in pages sized to its context window when it is
-// large, while the terminal keeps the parser's own presentation.
+// Send the parser's data and original tables/charts together, paged when needed.
 function result(ctx: ExtensionContext, report: Report) {
   return parserResult(report, typeof report.bundle_revision === "number" ? report.bundle_revision : bundleVersion, pageBytes(ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow), pages);
 }
 
 type ToolResult = { isError?: boolean; content?: { type: string; text?: string }[]; details?: { data?: Report } };
 
+// Empty components also suppress the tool shell, leaving only the working indicator.
+const hiddenTool = { invalidate() {}, render(_width: number): string[] { return []; } };
+
 function renderer(title: string, summary: (report: Report) => string) {
   return {
-    renderCall(_args: object, theme: Theme) {
+    renderShell: "self" as const,
+    renderCall(_args: object, theme: Theme, context?: { expanded: boolean }) {
+      if (!context?.expanded) return hiddenTool;
       return new Text(`${theme.fg("accent", "◆")} ${theme.fg("toolTitle", title)}`, 0, 0);
     },
-    renderResult(toolResult: ToolResult, options: { expanded: boolean; isPartial: boolean }, theme: Theme) {
-      if (options.isPartial) return new Text(theme.fg("muted", "  … parsing"), 0, 0);
-      if (toolResult.isError || !toolResult.details?.data) {
+    renderResult(toolResult: ToolResult, options: { expanded: boolean; isPartial: boolean }, theme: Theme, context?: { isError: boolean }) {
+      if (options.isPartial) return hiddenTool;
+      if (toolResult.isError || context?.isError || !toolResult.details?.data) {
         const reason = toolResult.content?.filter(item => item.type === "text").map(item => item.text ?? "").join("\n").trim() || "Parser returned no evidence.";
         return new Text(theme.fg("error", `  ✗ ${reason}`), 0, 0);
       }
+      if (!options.expanded) return hiddenTool;
       const report = toolResult.details.data;
       const line = theme.fg("success", `  ✓ ${summary(report)}`);
-      return new Text(options.expanded && report.render ? `${line}\n${report.render}` : line, 0, 0);
+      return new Text(report.render ? `${line}\n${report.render}` : line, 0, 0);
     },
   };
 }
@@ -160,9 +164,6 @@ function windowArgs(p: { from?: string; to?: string; around?: string; window?: s
 }
 
 export default function mongodb(pi: ExtensionAPI) {
-  // Numbers and dates in an answer get colours of their own; thinking and user text are left alone.
-  pi.registerMarkdownTransformer((markdown, context) => (context.messageType === "assistant" ? highlight(markdown) : markdown));
-
   pi.on("input", async (event, ctx) => {
     let text = event.text;
     try {
@@ -300,11 +301,10 @@ ${dataPath
   pi.registerTool({
     name: "mongo_metrics",
     label: "MongoDB FTDC metrics",
-    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them for the standard overview board (queues, tickets, latency, operations, cache, cpu, disk), the same board for every node and every window. Name several sources to compare nodes: each stream is read over the same window and identified by its source, and the rows of one metric stay together. Set overlay to put every node's line on one chart when the question is where two nodes stopped agreeing.",
+    description: "Chart FTDC metrics over a window. Name metrics to see exactly those, or omit them for the standard overview board (queues, tickets, latency, operations, cache, cpu, disk), the same board for every node and every window. Name several sources to compare nodes: each stream is read over the same window and identified by its source, and the rows of one metric stay together.",
     parameters: Type.Object({
       sources: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Node names from mongo_coverage; several to compare nodes, or [\"all\"] for every stream. Every stream by default." })),
       metrics: Type.Optional(Type.Array(Type.String(), { maxItems: 20, description: "Metric paths, e.g. serverStatus/globalLock/currentQueue/total. * and ? match, so a subtree can be asked for whole: flowControl/*, wiredTiger/cache/*. Every column FTDC holds is reachable, not only the board's: the kernel's TCP counters are systemMetrics/netstat/Tcp:* and TcpExt:* (RetransSegs, OutSegs, TCPTimeouts, ListenOverflows, CurrEstab)" })),
-      overlay: Type.Optional(Type.Boolean({ description: "Accepted for compatibility; every stream of a metric is already drawn on one panel, a bar strip per stream on one scale" })),
       top: Type.Optional(Type.Integer({ minimum: 1, maximum: 40, description: "How many metrics of the standard board to draw when none are named" })),
       height: Type.Optional(Type.Integer({ minimum: 2, maximum: 20, description: "Chart rows per metric" })),
       bin: Type.Optional(Type.Integer({ minimum: 1, description: "Bin size in seconds; chosen from the window by default" })),
@@ -316,7 +316,6 @@ ${dataPath
       return result(ctx, await run("metrics", [
         ...sources, ...metrics, ...arg("top", p.top), ...arg("height", p.height),
         ...arg("bin", p.bin), ...windowArgs(p),
-        ...(p.overlay ? ["--overlay"] : []),
       ], signal));
     },
     ...renderer("metrics", (report) => `${(report.data as unknown as unknown[])?.length ?? 0} metrics charted`),
@@ -488,8 +487,15 @@ ${dataPath
       const { text, pages: total } = pages.page(p.result, p.page);
       return { content: [{ type: "text" as const, text: `${pageHeader(p.result, p.page, total)}\n${text}` }], details: {} };
     },
-    renderCall(args: { result?: string; page?: number }, theme: Theme) {
+    renderShell: "self",
+    renderCall(args: { result?: string; page?: number }, theme: Theme, context) {
+      if (!context.expanded) return hiddenTool;
       return new Text(`${theme.fg("accent", "◆")} ${theme.fg("toolTitle", `page ${args.page ?? "?"} of ${args.result ?? "?"}`)}`, 0, 0);
+    },
+    renderResult(toolResult, _options, theme, context) {
+      if (!context.isError) return hiddenTool;
+      const reason = toolResult.content.filter(item => item.type === "text").map(item => item.text).join("\n");
+      return new Text(theme.fg("error", `  ✗ ${reason}`), 0, 0);
     },
   });
 }

@@ -63,3 +63,27 @@ test("coverage errors remain visible in the collapsed terminal result", async ()
     { expanded: false, isPartial: false }, { fg: (_color, text) => text }).render(120).join("\n");
   assert.ok(rendered.includes(diagnostic), rendered);
 });
+
+test("tool activity stays hidden while expanded results retain the parser output", async () => {
+  const { loadExtensions } = await import("../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js");
+  const extension = new URL("../.pi/extensions/mongodb.ts", import.meta.url).pathname;
+  const loaded = await loadExtensions([extension], new URL("..", import.meta.url).pathname);
+  assert.deepEqual(loaded.errors, []);
+  const theme = { fg: (_color, text) => text };
+  const metrics = loaded.extensions[0].tools.get("mongo_metrics").definition;
+  const original = "connections.current [conns]\n0 ┤▃▆█\n  13:40 UTC";
+  const result = { details: { data: { command: "metrics", data: [], render: original } } };
+  assert.equal(metrics.renderShell, "self");
+  assert.deepEqual(metrics.renderCall({}, theme, { expanded: false }).render(120), []);
+  assert.deepEqual(metrics.renderResult(result, { expanded: false, isPartial: false }, theme).render(120), []);
+  assert.deepEqual(metrics.renderResult(result, { expanded: false, isPartial: true }, theme).render(120), []);
+  const expanded = metrics.renderResult(result, { expanded: true, isPartial: false }, theme).render(120);
+  assert.ok(expanded.map(line => line.trimEnd()).join("\n").includes(original));
+  const page = loaded.extensions[0].tools.get("mongo_page").definition;
+  assert.equal(page.renderShell, "self");
+  assert.deepEqual(page.renderCall({ result: "r1", page: 2 }, theme, { expanded: false }).render(120), []);
+  assert.deepEqual(page.renderResult({ content: [] }, {}, theme, { isError: false }).render(120), []);
+  const error = metrics.renderResult({ content: [{ type: "text", text: "invalid metric" }] },
+    { expanded: false, isPartial: false }, theme, { isError: true }).render(120).join("\n");
+  assert.ok(error.includes("invalid metric"));
+});

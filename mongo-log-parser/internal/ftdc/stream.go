@@ -29,31 +29,13 @@ func OpenStream(dir string) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	stream := &Stream{Dir: dir, Failures: map[string]error{}, Partial: map[string]string{}}
+	var paths []string
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
+		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
 		}
-		path := filepath.Join(dir, entry.Name())
-		file, err := Open(path)
-		if err != nil {
-			stream.Failures[path] = err
-			continue
-		}
-		if file.Cut != "" {
-			stream.Partial[path] = file.Cut
-		}
-		stream.files = append(stream.files, file)
 	}
-	if len(stream.files) == 0 {
-		return nil, fmt.Errorf("%s: no readable FTDC files", dir)
-	}
-	sort.Slice(stream.files, func(i, j int) bool {
-		left, _ := stream.files[i].Span()
-		right, _ := stream.files[j].Span()
-		return left.Before(right)
-	})
-	return stream, nil
+	return OpenFiles(dir, paths)
 }
 
 // Span is the time range the whole stream covers.
@@ -295,8 +277,7 @@ func referenceAt(ref chunkRef) (bson.Raw, error) {
 	return referenceOf(payload)
 }
 
-// OpenFiles is OpenStream over a chosen set of files, for diagnostic data that sits in a
-// directory beside other things.
+// OpenFiles indexes a chosen set of files, for diagnostic data that sits beside other things.
 func OpenFiles(dir string, paths []string) (*Stream, error) {
 	stream := &Stream{Dir: dir, Failures: map[string]error{}, Partial: map[string]string{}}
 	for _, path := range paths {

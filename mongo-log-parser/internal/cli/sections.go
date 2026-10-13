@@ -49,24 +49,24 @@ func renderProcesses(processes []analyze.Process, options render.TableOptions) s
 		// The version a process is running and the versions it ran are different facts, and joining
 		// them into one cell answered neither: a node reading "5.0.0, 6.0.0" does not say which
 		// of the two is live now.
-		{Title: "Was", Values: text(func(p analyze.Process) string { return orDash(strings.Join(p.Previous(), ", ")) }), Drop: 6},
+		{Title: "Was", Values: text(func(p analyze.Process) string { return orDash(strings.Join(p.Previous(), ", ")) })},
 		{Title: "Last start", Values: text(func(p analyze.Process) string {
 			if p.LastStartAt.IsZero() {
 				return "-"
 			}
 			return p.LastStartAt.Format("01-02 15:04")
-		}), Drop: 7},
-		{Title: "Engine", Values: text(func(p analyze.Process) string { return orDash(p.StorageEngine) }), Drop: 4},
+		})},
+		{Title: "Engine", Values: text(func(p analyze.Process) string { return orDash(p.StorageEngine) })},
 		{Title: "Cache", Align: render.AlignRight, Values: text(func(p analyze.Process) string {
 			if p.CacheGB == 0 {
 				return "-"
 			}
 			return render.Compact(p.CacheGB) + "G"
 		})},
-		{Title: "Starts", Align: render.AlignRight, Values: text(func(p analyze.Process) string { return strconv.Itoa(p.Starts) }), Drop: 3},
+		{Title: "Starts", Align: render.AlignRight, Values: text(func(p analyze.Process) string { return strconv.Itoa(p.Starts) })},
 		{Title: "Unclean", Align: render.AlignRight, Values: text(func(p analyze.Process) string { return strconv.Itoa(p.Unclean) })},
-		{Title: "Auth", Values: text(func(p analyze.Process) string { return orDash(p.Authorization) }), Drop: 2},
-		{Title: "OS", Values: text(func(p analyze.Process) string { return orDash(p.OS) }), Drop: 1},
+		{Title: "Auth", Values: text(func(p analyze.Process) string { return orDash(p.Authorization) })},
+		{Title: "OS", Values: text(func(p analyze.Process) string { return orDash(p.OS) })},
 	}, options)
 }
 
@@ -113,12 +113,12 @@ func renderBuilds(builds []analyze.IndexBuild, limit int, options render.TableOp
 	}
 	table := render.Table([]render.Column{
 		{Title: "Namespace", Values: text(func(b analyze.IndexBuild) string { return b.Namespace })},
-		{Title: "Index", Values: text(func(b analyze.IndexBuild) string { return orDash(b.Indexes) }), Drop: 3},
+		{Title: "Index", Values: text(func(b analyze.IndexBuild) string { return orDash(b.Indexes) })},
 		{Title: "Started", Values: text(func(b analyze.IndexBuild) string { return b.Started.Format("01-02 15:04") })},
 		{Title: "Took", Align: render.AlignRight, Values: text(func(b analyze.IndexBuild) string { return render.Duration(b.Duration()) })},
 		{Title: "Outcome", Values: text(func(b analyze.IndexBuild) string { return b.Outcome })},
-		{Title: "Phases", Align: render.AlignRight, Values: text(func(b analyze.IndexBuild) string { return strconv.Itoa(b.Phases) }), Drop: 2},
-		{Title: "Node", Align: render.AlignTail, Values: text(func(b analyze.IndexBuild) string { return b.Source }), Drop: 1},
+		{Title: "Phases", Align: render.AlignRight, Values: text(func(b analyze.IndexBuild) string { return strconv.Itoa(b.Phases) })},
+		{Title: "Node", Align: render.AlignTail, Values: text(func(b analyze.IndexBuild) string { return b.Source })},
 	}, options)
 	if len(builds) > len(shown) {
 		table += fmt.Sprintf("\n%s in total", plural(len(builds), "build"))
@@ -150,15 +150,15 @@ func renderChanges(changes []analyze.Change, limit int, options render.TableOpti
 		{Title: "Change", Values: text(func(c analyze.Change) string { return c.Kind })},
 		{Title: "Namespace", Values: text(func(c analyze.Change) string { return orDash(c.Namespace) })},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(c analyze.Change) string { return strconv.Itoa(c.Count) })},
-		{Title: "Failed", Align: render.AlignRight, Values: text(func(c analyze.Change) string { return strconv.Itoa(c.Failures) }), Drop: 3},
-		{Title: "First", Values: text(func(c analyze.Change) string { return c.First.Format("01-02 15:04") }), Drop: 2},
+		{Title: "Failed", Align: render.AlignRight, Values: text(func(c analyze.Change) string { return strconv.Itoa(c.Failures) })},
+		{Title: "First", Values: text(func(c analyze.Change) string { return c.First.Format("01-02 15:04") })},
 		{Title: "Last", Values: text(func(c analyze.Change) string { return c.Last.Format("01-02 15:04") })},
 		{Title: "Slowest ms", Align: render.AlignRight, Values: text(func(c analyze.Change) string {
 			if c.MaxMillis == 0 {
 				return "-"
 			}
 			return render.Compact(c.MaxMillis)
-		}), Drop: 1},
+		})},
 	}, options)
 	if len(changes) > len(shown) {
 		table += fmt.Sprintf("\n%d change groups in total", len(changes))
@@ -183,19 +183,12 @@ func renderSignals(signals []analyze.Signal, limit int, options render.TableOpti
 		{Title: "Review", Values: text(func(s analyze.Signal) string { return s.Priority })},
 		{Title: "Condition", Values: text(func(s analyze.Signal) string { return s.Title })},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(s.Count) })},
-		{Title: "Per min*", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return render.Compact(s.Rate()) }), Drop: 2},
-		// When it started is the column that lines a condition up against the charts, so it is the
-		// last one to give way.
-		{Title: "First", Values: text(func(s analyze.Signal) string { return s.First.Format("01-02 15:04") }), Drop: 4},
-		{Title: "Last", Values: text(func(s analyze.Signal) string { return s.Last.Format("01-02 15:04") }), Drop: 3},
-		{Title: "Nodes", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(len(s.Sources)) }), Drop: 1},
-		{Title: "Look with", Values: text(func(s analyze.Signal) string { return s.Next })},
+		{Title: "Per min*", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return render.Compact(s.Rate()) })},
+		{Title: "First", Values: text(func(s analyze.Signal) string { return s.First.Format("01-02 15:04") })},
+		{Title: "Last", Values: text(func(s analyze.Signal) string { return s.Last.Format("01-02 15:04") })},
+		{Title: "Nodes", Align: render.AlignRight, Values: text(func(s analyze.Signal) string { return strconv.Itoa(len(s.Sources)) })},
 	}, options)
-	table += "\nReview is a fixed navigation priority, not logged severity or incident impact. Rows count text-pattern matches, not confirmed diagnoses."
-	// The footnote explains a column a narrow terminal may have dropped.
-	if strings.Contains(table, "Per min*") {
-		table += "\n* Rate uses the first-to-last matched-record span, with a minimum denominator of one minute; it is not a full-coverage rate."
-	}
+	table += "\n* Rate uses the first-to-last matched-record span, with a minimum denominator of one minute; it is not a full-coverage rate."
 	return table
 }
 
@@ -216,8 +209,8 @@ func renderMigrations(migrations []analyze.Migration, limit int, options render.
 		{Title: "Namespace", Values: text(func(m analyze.Migration) string { return m.Namespace })},
 		{Title: "Moves", Align: render.AlignRight, Values: text(func(m analyze.Migration) string { return strconv.Itoa(m.Moves) })},
 		{Title: "Failed", Align: render.AlignRight, Values: text(func(m analyze.Migration) string { return strconv.Itoa(m.Failures) })},
-		{Title: "First", Values: text(func(m analyze.Migration) string { return m.First.Format("01-02 15:04") }), Drop: 2},
-		{Title: "Last", Values: text(func(m analyze.Migration) string { return m.Last.Format("01-02 15:04") }), Drop: 1},
+		{Title: "First", Values: text(func(m analyze.Migration) string { return m.First.Format("01-02 15:04") })},
+		{Title: "Last", Values: text(func(m analyze.Migration) string { return m.Last.Format("01-02 15:04") })},
 	}, options)
 }
 
@@ -334,31 +327,18 @@ func renderWaits(total float64, waits []analyze.Wait, options render.TableOption
 	names := make([]string, len(waits))
 	millis := make([]string, len(waits))
 	shares := make([]string, len(waits))
-	notes := make([]string, len(waits))
 	for i, wait := range waits {
 		names[i] = wait.Name
 		millis[i] = render.Compact(wait.Millis)
 		shares[i] = fmt.Sprintf("%.1f%%", wait.Share*100)
-		notes[i] = wait.Next
 	}
 	table := render.Table([]render.Column{
 		{Title: "Spent on", Values: names},
 		{Title: "Total ms", Align: render.AlignRight, Values: millis},
 		{Title: "Share", Align: render.AlignRight, Values: shares},
-		{Title: "Look with", Values: notes, Drop: 1},
 	}, options)
-	// The lead row is named and defined, and that is as far as it goes. This sentence used to carry
-	// the row's advice — "look at replication lag and at the write concern the client asks for" —
-	// which made the largest number in the table read as the answer, and sent readers after the
-	// wrong part of the deployment. A wait is a measurement, not a cause: when the server stops
-	// serving, every operation in flight reports whatever wait it happened to be in, and the table
-	// cannot tell that apart from the wait being the problem.
 	lead := waits[0]
-	return fmt.Sprintf("%s\n%s ms in total; the largest share is %s — %s.\n"+
-		"These logged timing fields may overlap and are not a partition of elapsed time. Missing fields "+
-		"are unknown; unaccounted time is a residual calculation, not measured CPU time. "+
-		"The largest share does not establish cause or exclude workload contributions.",
-		table, render.Compact(total), lead.Name, lead.Meaning)
+	return fmt.Sprintf("%s\n%s ms in total; the largest share is %s — %s.", table, render.Compact(total), lead.Name, lead.Meaning)
 }
 
 // minAccountedShare is how much of the time the server has to have explained before a breakdown of
@@ -592,19 +572,19 @@ func setSummaries(summaries []analyze.SetSummary, options render.TableOptions) s
 		})},
 		{Title: "Total", Align: render.AlignRight, Values: text(func(summary analyze.SetSummary) string {
 			return render.Duration(summary.TotalGap)
-		}), Drop: 2},
+		})},
 		{Title: "Last in PRIMARY", Align: render.AlignTail, Values: text(func(summary analyze.SetSummary) string {
 			if summary.LastPrimary == "" {
 				return "never seen"
 			}
 			return shortHost(summary.LastPrimary)
-		}), Drop: 6},
+		})},
 		{Title: "At", Values: text(func(summary analyze.SetSummary) string {
 			if summary.LastPrimaryAt.IsZero() {
 				return "-"
 			}
 			return summary.LastPrimaryAt.Format("01-02 15:04")
-		}), Drop: 5},
+		})},
 		{Title: "Knows how", Values: text(func(summary analyze.SetSummary) string {
 			// Whether the last word on the set came from the member itself or from somebody
 			// watching it decides how much weight to put on it.
@@ -612,21 +592,21 @@ func setSummaries(summaries []analyze.SetSummary, options render.TableOptions) s
 				return "-"
 			}
 			return string(summary.LastPrimaryBy)
-		}), Drop: 3},
+		})},
 		{Title: "Shut down", Align: render.AlignRight, Values: text(func(summary analyze.SetSummary) string {
 			// Beside "No PRIMARY" rather than folded into it: a set that was switched off is not a
 			// set that could not elect anybody, and the numbers are read against each other.
 			return render.Duration(summary.Stopped)
-		}), Drop: 7},
+		})},
 		{Title: "Unwatched", Align: render.AlignRight, Values: text(func(summary analyze.SetSummary) string {
 			return render.Duration(summary.Unwatched)
-		}), Drop: 1},
+		})},
 		{Title: "History", Values: text(func(summary analyze.SetSummary) string {
 			if summary.Partial {
 				return "partial"
 			}
 			return "complete"
-		}), Drop: 4},
+		})},
 	}, options)
 }
 

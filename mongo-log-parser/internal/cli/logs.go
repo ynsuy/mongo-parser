@@ -91,16 +91,14 @@ func runLogs(root string, args []string) error {
 		return values
 	}
 	rendered := render.Table([]render.Column{
-		// The group id never drops: it is the handle --group takes, and a table that has dropped it
-		// can be read but not followed.
 		{Title: "Group", Values: text(func(g analyze.Group) string { return g.ID })},
 		{Title: "Sev", Values: text(func(g analyze.Group) string { return g.Severity })},
-		{Title: "Component", Values: text(func(g analyze.Group) string { return g.Component }), Drop: 3},
-		{Title: "ID", Align: render.AlignRight, Values: text(func(g analyze.Group) string { return strconv.Itoa(g.MessageID) }), Drop: 4},
+		{Title: "Component", Values: text(func(g analyze.Group) string { return g.Component })},
+		{Title: "ID", Align: render.AlignRight, Values: text(func(g analyze.Group) string { return strconv.Itoa(g.MessageID) })},
 		{Title: "Count", Align: render.AlignRight, Values: text(func(g analyze.Group) string { return strconv.Itoa(g.Count) })},
-		{Title: "Category", Values: text(func(g analyze.Group) string { return string(g.Category) }), Drop: 2},
-		{Title: "First", Values: text(func(g analyze.Group) string { return g.First.Format("01-02 15:04") }), Drop: 5},
-		{Title: "Last", Values: text(func(g analyze.Group) string { return g.Last.Format("01-02 15:04") }), Drop: 1},
+		{Title: "Category", Values: text(func(g analyze.Group) string { return string(g.Category) })},
+		{Title: "First", Values: text(func(g analyze.Group) string { return g.First.Format("01-02 15:04") })},
+		{Title: "Last", Values: text(func(g analyze.Group) string { return g.Last.Format("01-02 15:04") })},
 		{Title: "Message", Align: render.AlignLeft, Values: text(func(g analyze.Group) string { return g.Message }), Elastic: true},
 	}, render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json})
 	if !*noChart {

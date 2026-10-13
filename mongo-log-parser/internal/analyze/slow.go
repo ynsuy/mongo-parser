@@ -569,8 +569,6 @@ type Wait struct {
 	Millis float64 `json:"millis"`
 	// Share is the fraction of the shape's total duration this wait accounts for.
 	Share float64 `json:"share"`
-	// Next is the command to run when this is the wait that dominates, short enough for a column.
-	Next string `json:"next,omitempty"`
 	// Meaning is what it means that the time went here, for the one line printed under the table.
 	Meaning string `json:"meaning,omitempty"`
 }
@@ -588,23 +586,23 @@ func (s Shape) Waits() []Wait {
 		return nil
 	}
 	candidates := []Wait{
-		{Name: "flow control", Millis: s.FlowControlWait.Sum, Next: "metrics --metric 'flowControl/*'",
+		{Name: "flow control", Millis: s.FlowControlWait.Sum,
 			Meaning: "sum of logged flowControl timeAcquiringMicros, converted to milliseconds"},
-		{Name: "write concern", Millis: s.WriteConcernWait.Sum, Next: "metrics --metric 'repl/*'",
+		{Name: "write concern", Millis: s.WriteConcernWait.Sum,
 			Meaning: "sum of logged waitForWriteConcernDurationMillis"},
-		{Name: "lock acquire", Millis: s.LockWait.Sum, Next: "metrics --metric 'globalLock/*'",
+		{Name: "lock acquire", Millis: s.LockWait.Sum,
 			Meaning: "sum of logged lock timeAcquiringMicros, converted to milliseconds"},
-		{Name: "ticket queue", Millis: s.QueueWait.Sum, Next: "metrics --metric 'concurrentTransactions/*' --metric 'queues/execution/*'",
+		{Name: "ticket queue", Millis: s.QueueWait.Sum,
 			Meaning: "sum of logged queues execution totalTimeQueuedMicros, converted to milliseconds"},
-		{Name: "storage read", Millis: s.StorageWait.Sum, Next: "metrics --metric 'wiredTiger/cache/*'",
+		{Name: "storage read", Millis: s.StorageWait.Sum,
 			Meaning: "sum of logged storage data timeReadingMicros and timeWaitingMicros, converted to milliseconds"},
-		{Name: "remote shards", Millis: s.RemoteWait.Sum, Next: "slow on the shard's own logs",
+		{Name: "remote shards", Millis: s.RemoteWait.Sum,
 			Meaning: "sum of logged remoteOpWaitMillis; no shard identity inferred"},
 		// Planning is work rather than waiting, but it is a stretch of the operation's own time the
 		// server measured, and left out it was counted as unaccounted.
-		{Name: "planning", Millis: s.Planning.Sum / 1000, Next: "-",
+		{Name: "planning", Millis: s.Planning.Sum / 1000,
 			Meaning: "sum of logged planningTimeMicros, converted to milliseconds"},
-		{Name: "cpu", Millis: s.CPU.Sum, Next: "-",
+		{Name: "cpu", Millis: s.CPU.Sum,
 			Meaning: "sum of logged cpuNanos, converted to milliseconds"},
 	}
 	waits := make([]Wait, 0, len(candidates)+1)
@@ -621,10 +619,6 @@ func (s Shape) Waits() []Wait {
 		waits = append(waits, wait)
 	}
 	if remainder := total - accounted; remainder > 0 && len(waits) > 0 {
-		// This row had no command beside it, which made the table asymmetric in a way that reads
-		// as an answer: every named wait offered somewhere to go and the largest unnamed one did
-		// not. It is also where the time goes when the server itself stopped serving for a moment,
-		// so it is the row to follow when nothing named accounts for the slowness.
 		unaccounted := UnaccountedWait()
 		unaccounted.Millis, unaccounted.Share = remainder, remainder/total
 		waits = append(waits, unaccounted)
@@ -635,7 +629,7 @@ func (s Shape) Waits() []Wait {
 
 // UnaccountedWait is the row for the time no named wait accounts for, before its figures are set.
 func UnaccountedWait() Wait {
-	return Wait{Name: "unaccounted", Next: "report --only labels,activity",
+	return Wait{Name: "unaccounted",
 		Meaning: "positive residual of logged duration minus summed named wait fields; not a measured activity or a cause"}
 }
 
