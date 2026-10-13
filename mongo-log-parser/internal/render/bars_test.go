@@ -28,3 +28,17 @@ func TestBarChartDrawsLevelsZerosAndGaps(t *testing.T) {
 		t.Fatalf("header or note lost:\n%s", out)
 	}
 }
+
+func TestBarScaleFloatsALevelFarFromZero(t *testing.T) {
+	level := series.Series{Buckets: []series.Bucket{
+		{Start: "2026-10-09T06:00:00Z", Samples: 1, Min: 12200, Avg: 12200, Max: 12200},
+		{Start: "2026-10-09T06:01:00Z", Samples: 1, Min: 13200, Avg: 13200, Max: 13200},
+	}}
+	if base, top := barScale([]series.Series{level}); base != 12000 || top != 13200 {
+		t.Fatalf("level scale %v..%v, want 12000..13200", base, top)
+	}
+	level.Buckets[0].Min, level.Buckets[0].Avg, level.Buckets[0].Max = 4000, 4000, 4000
+	if base, _ := barScale([]series.Series{level}); base != 0 {
+		t.Fatalf("wide range floated to %v, want 0", base)
+	}
+}

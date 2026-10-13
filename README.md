@@ -1,4 +1,4 @@
-# MongoDB support bundle analysis
+# MongoDB FTDC and log diagnoser
 
 Reads an offline MongoDB support bundle — structured logs, log exports, `diagnostic.data` (FTDC),
 shell printouts and configs, in any mix of directories and archives — and narrows from what every

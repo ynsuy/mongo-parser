@@ -31,8 +31,8 @@ var barLevels = []rune(" ▁▂▃▄▅▆▇█")
 func BarColumns(width int) int { return max(8, width-barGutter-2) }
 
 // BarChart draws series as compact vertical bars: one bar per column, eight levels per row, a
-// strip per series and a shared UTC time axis under each panel. A blank cell is zero; a dot on
-// the floor is a bin with no samples.
+// strip per series and a shared UTC time axis under each panel. A blank cell is the floor; a dot
+// on the floor is a bin with no samples.
 func BarChart(rows []series.Series, options BarOptions) string {
 	if len(rows) == 0 {
 		return "No metrics to show."
@@ -121,7 +121,8 @@ func barPanel(rows []series.Series, options BarOptions, first, last float64, col
 }
 
 // barScale is the range every strip of a panel is drawn against. Bars stand on zero unless the
-// data goes below it.
+// data goes below it, or moves less than its own distance from zero: then they stand on a round
+// floor under the minimum, or a level like 12k↔13k would draw as one solid block.
 func barScale(rows []series.Series) (base, top float64) {
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for i := range rows {
@@ -136,6 +137,10 @@ func barScale(rows []series.Series) (base, top float64) {
 	}
 	base = math.Min(0, lo)
 	top = math.Max(hi, 0)
+	if lo > 0 && hi > lo && hi-lo < lo {
+		step := math.Pow(10, math.Floor(math.Log10(hi-lo)))
+		base = math.Floor(lo/step) * step
+	}
 	if !(top > base) {
 		top = base + 1
 	}
@@ -164,12 +169,10 @@ func barStrip(values []float64, slots int, base, top float64, height int, unit s
 	}
 	lines := make([]string, height)
 	for r := range cells {
-		label, edge := "", " │"
-		switch r {
-		case 0:
-			label, edge = Amount(top, unit), " ┤"
-		case height - 1:
-			label, edge = Amount(base, unit), " ┤"
+		// Every row is labelled at its top edge so a short bar reads against the row it sits in.
+		label, edge := Amount(base+(top-base)*float64(height-r)/float64(height), unit), " ┤"
+		if r == height-1 {
+			label = Amount(base, unit)
 		}
 		lines[r] = strings.TrimRight(Fit(label, barGutter, AlignRight)+edge+string(cells[r]), " ")
 	}
@@ -182,11 +185,7 @@ func barStats(row series.Series) string {
 	if stats == nil {
 		return "no samples"
 	}
-	parts := []string{}
-	if row.Low {
-		parts = append(parts, "min "+Amount(stats.Min, row.Unit))
-	}
-	parts = append(parts, "avg "+Amount(stats.Avg, row.Unit), "p95 "+Amount(stats.P95, row.Unit))
+	parts := []string{"min " + Amount(stats.Min, row.Unit), "avg " + Amount(stats.Avg, row.Unit), "p95 " + Amount(stats.P95, row.Unit)}
 	peak := "max " + Amount(stats.Max, row.Unit)
 	if at := peakTime(stats); at != "-" {
 		peak += " @" + at
