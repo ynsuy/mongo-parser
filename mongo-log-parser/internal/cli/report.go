@@ -69,6 +69,7 @@ func runReport(root string, args []string) error {
 	deployment.Learn(cluster)
 
 	states, labelled, cacheSizes, labelFailures := labelStreams(set, start, end)
+	nameMembers(labelled.Results, cluster)
 	streamFailures = append(streamFailures, labelFailures...)
 	stall := funnel.Lay(labelled.Results, labelled.Imbalances, labelled.Skipped, openCommand(root))
 

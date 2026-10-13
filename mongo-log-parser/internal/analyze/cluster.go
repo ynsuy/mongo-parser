@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -127,6 +128,7 @@ type Cluster struct {
 	lifecycle map[string][]stateEvent // log file -> when its process started and stopped
 	claimed   map[string]string       // log file -> the host:port it says it runs on, if a roster agrees
 	coverage  map[string]coverage     // log file -> the stretch of time it spans
+	configs   map[string]memberConfig // log file -> the member list its newest config named
 	// unstable is when the set was not simply running: elections, step downs, rollbacks,
 	// heartbeats that failed, members changing state. Kept as a history rather than a total
 	// because the question it answers is "was this happening at the same time as that", and a
@@ -138,8 +140,84 @@ func NewCluster() *Cluster {
 	return &Cluster{nodes: map[string]*Node{}, migrations: map[string]*Migration{},
 		peers: map[string]PeerState{}, reports: map[string][]stateEvent{}, selves: map[string]identity{},
 		roster: map[string]string{}, truncated: map[string]bool{}, lifecycle: map[string][]stateEvent{},
-		claimed:  map[string]string{},
+		claimed: map[string]string{}, configs: map[string]memberConfig{},
 		coverage: map[string]coverage{}, unstable: Timeline{}}
+}
+
+// ConfigIDs are the log ids that print the whole replica set config.
+var ConfigIDs = []int{20722, 21392}
+
+// ConfigMember is one member as the replica set config names it.
+type ConfigMember struct {
+	ID        int     `json:"id"`
+	Host      string  `json:"host"`
+	Priority  float64 `json:"priority"`
+	Votes     int     `json:"votes"`
+	Hidden    bool    `json:"hidden,omitempty"`
+	Arbiter   bool    `json:"arbiter,omitempty"`
+	DelaySecs int     `json:"delay_secs,omitempty"`
+}
+
+func (m ConfigMember) String() string {
+	parts := []string{m.Host}
+	if m.Arbiter {
+		parts = append(parts, "arbiter")
+	}
+	if m.Hidden {
+		parts = append(parts, "hidden")
+	}
+	if m.DelaySecs > 0 {
+		parts = append(parts, fmt.Sprintf("delayed %ds", m.DelaySecs))
+	}
+	parts = append(parts, fmt.Sprintf("priority %g", m.Priority), fmt.Sprintf("votes %d", m.Votes))
+	return strings.Join(parts, ", ")
+}
+
+type memberConfig struct {
+	members []ConfigMember
+	// changed is set when the log named members in a different order, so a position no longer
+	// names one member.
+	changed bool
+}
+
+// ConfigMembers is the member list the node's log last printed, in config order, which is the
+// order replSetGetStatus lists them in. Nil when there is none or the order changed in the window.
+func (c *Cluster) ConfigMembers(source string) []ConfigMember {
+	config := c.configs[source]
+	if config.changed {
+		return nil
+	}
+	return config.members
+}
+
+type configMemberAttributes struct {
+	ID         int      `json:"_id"`
+	Host       string   `json:"host"`
+	Priority   *float64 `json:"priority"`
+	Votes      *int     `json:"votes"`
+	Hidden     bool     `json:"hidden"`
+	Arbiter    bool     `json:"arbiterOnly"`
+	Delay      int      `json:"secondaryDelaySecs"`
+	SlaveDelay int      `json:"slaveDelay"`
+}
+
+func (c *Cluster) learnConfig(source string, read []configMemberAttributes) {
+	members := make([]ConfigMember, len(read))
+	for i, m := range read {
+		members[i] = ConfigMember{ID: m.ID, Host: m.Host, Priority: 1, Votes: 1, Hidden: m.Hidden, Arbiter: m.Arbiter, DelaySecs: max(m.Delay, m.SlaveDelay)}
+		if m.Priority != nil {
+			members[i].Priority = *m.Priority
+		}
+		if m.Votes != nil {
+			members[i].Votes = *m.Votes
+		}
+	}
+	old, seen := c.configs[source]
+	changed := old.changed || seen && len(old.members) != len(members)
+	for i := 0; seen && !changed && i < len(members); i++ {
+		changed = old.members[i].Host != members[i].Host
+	}
+	c.configs[source] = memberConfig{members: members, changed: changed}
 }
 
 // Unstable is the history of the set being anything other than steady.
@@ -153,10 +231,8 @@ type replAttributes struct {
 	Host       string `json:"host"`
 	Port       int    `json:"port"`
 	Config     struct {
-		Set     string `json:"_id"`
-		Members []struct {
-			Host string `json:"host"`
-		} `json:"members"`
+		Set     string                   `json:"_id"`
+		Members []configMemberAttributes `json:"members"`
 	} `json:"config"`
 	SyncSource string `json:"syncSource"`
 	Namespace  string `json:"namespace"`
@@ -256,6 +332,7 @@ func (c *Cluster) Add(record Record) {
 				c.roster[member.Host] = attributes.Config.Set
 			}
 		}
+		c.learnConfig(record.Source, attributes.Config.Members)
 	// Two heartbeat lines say what a peer saw: "Member is in new state" puts the state in an
 	// attribute, and "Member is now in state RS_DOWN" spells it in the message — and that second
 	// one is the only line in a log that ever says a member went away.

@@ -4,7 +4,7 @@ A Pi terminal agent for MongoDB support bundles. It reads nothing itself: every 
 `mongo-log-parser`, the Go tool in the directory beside this one in the same repository, which reads the bundle — logs, log
 exports, FTDC, shell printouts and configs, in any mix of directories and archives — once into a
 local store and answers from it. The agent reads the parser's structured answers and writes up what
-happened as numbered findings with an overall assessment.
+happened as findings in time order with an overall assessment.
 
 Requires Go 1.26+, Node.js 22.19.0+ and npm, plus Bash (macOS, Linux, or WSL).
 Run these commands from the repository root after [cloning the repository](../README.md#install-and-run):
@@ -155,8 +155,10 @@ their scope; paging preserves all returned JSON, not every raw record in the bun
 Parser tool calls run sequentially to protect the shared cache during its first ingest. Tool errors
 show the parser's actual diagnostic instead of only `failed`.
 
-An incident answer is a list of numbered findings followed by an overall assessment. Each finding
-starts with the node and says what was measured, where, when (UTC) and for how long or how many;
+An incident answer is a bulleted list of findings in the order they started, followed by an overall
+assessment. They are not numbered, because they are not ranked. Each finding starts with the node and
+a line naming what happened and when; its sub-bullets give one measurement each, with where, when
+(UTC) and for how long or how many;
 related labels and slow shapes of one interval are folded into one finding, and there is no fixed
 number of findings. Findings describe; cause is weighed only in the overall assessment, which says
 what supports it and what is missing. PIDBA draws no charts or tables of its own. Tool failures

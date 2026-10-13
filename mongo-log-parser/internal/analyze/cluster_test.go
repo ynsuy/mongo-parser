@@ -180,3 +180,19 @@ func TestPeerStateKeepsOnlyTheLatest(t *testing.T) {
 		t.Fatalf("peer states = %+v, want one SECONDARY", peers)
 	}
 }
+
+func TestConfigMembersNameEachPosition(t *testing.T) {
+	line := func(members string) string {
+		return `{"t":{"$date":"2026-09-08T01:00:00Z"},"s":"I","c":"REPL","id":21392,"ctx":"ReplCoord-0","msg":"New replica set config in use","attr":{"config":{"_id":"rs0","members":[` + members + `]}}}` + "\n"
+	}
+	both := `{"_id":0,"host":"a:27017"},{"_id":7,"host":"b:27017","hidden":true,"priority":0,"votes":0}`
+	members := readNodes(t, nodeLog{"a", line(both)}).ConfigMembers("a")
+	if len(members) != 2 || members[0].String() != "a:27017, priority 1, votes 1" ||
+		members[1].String() != "b:27017, hidden, priority 0, votes 0" || members[1].ID != 7 {
+		t.Fatalf("members = %+v", members)
+	}
+	reordered := line(`{"_id":7,"host":"b:27017"},{"_id":0,"host":"a:27017"}`)
+	if got := readNodes(t, nodeLog{"a", line(both) + reordered}).ConfigMembers("a"); got != nil {
+		t.Fatalf("a reordered config still names positions: %+v", got)
+	}
+}

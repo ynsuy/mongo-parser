@@ -19,9 +19,11 @@ type Result struct {
 	Label    string `json:"label"`
 	Title    string `json:"title"`
 	Instance string `json:"instance,omitempty"`
-	Version  string `json:"version,omitempty"` // the server version the stream reported
-	Unit     string `json:"unit"`
-	View     string `json:"view"`
+	// Member is the replica set member a per-member instance stands for, from the node's logged config.
+	Member  string `json:"member,omitempty"`
+	Version string `json:"version,omitempty"` // the server version the stream reported
+	Unit    string `json:"unit"`
+	View    string `json:"view"`
 	// Minutes is how many minutes of the window had a reading.
 	Minutes int     `json:"minutes"`
 	Typical float64 `json:"typical"` // the median minute

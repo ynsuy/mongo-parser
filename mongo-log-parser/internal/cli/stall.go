@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ func renderStall(stall funnel.Stall, root string, options render.TableOptions) s
 	}
 	if len(stall.Notice) > 0 {
 		parts = append(parts, fmt.Sprintf("Worth noticing (%d)\n%s", len(stall.Notice), stallTable(stall.Notice, options)))
+	}
+	if text := memberNote(append(stall.Open, stall.Notice...)); text != "" {
+		parts = append(parts, text)
 	}
 	if len(stall.Open)+len(stall.Notice) > 0 {
 		parts = append(parts, fmt.Sprintf("Open one, second by second, beside the labels it pairs with and the logs of the same minutes:\n  mongo-log-parser label %s <label> --source <node>", root))
@@ -54,6 +58,24 @@ func stallTable(items []funnel.Item, options render.TableOptions) string {
 		{Title: "Why", Values: text(func(i funnel.Item) string { return strings.Join(i.Why, "; ") })},
 		{Title: "Moved with", Values: text(func(i funnel.Item) string { return movedWith(i.Result) })},
 	}, options)
+}
+
+// memberNote says which replica set member each numbered instance above is.
+func memberNote(items []funnel.Item) string {
+	lines, seen := make([]string, 0, 8), map[string]bool{}
+	for _, i := range items {
+		key := i.Source + " " + i.Instance
+		if i.Member == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		lines = append(lines, fmt.Sprintf("  %s instance %s = %s", i.Source, i.Instance, i.Member))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	sort.Strings(lines)
+	return "Members, from the node's logged replica set config:\n" + strings.Join(lines, "\n")
 }
 
 // ordinaryLine counts the labels that did nothing remarkable, node by node.

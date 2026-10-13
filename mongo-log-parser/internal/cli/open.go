@@ -8,12 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"mongo-log-parser/internal/analyze"
 	"mongo-log-parser/internal/ftdc"
 	"mongo-log-parser/internal/funnel"
 	"mongo-log-parser/internal/label"
 	"mongo-log-parser/internal/metrics"
 	"mongo-log-parser/internal/render"
 	"mongo-log-parser/internal/series"
+	"mongo-log-parser/internal/store"
 	"mongo-log-parser/internal/timeparse"
 )
 
@@ -93,6 +95,10 @@ func runLabel(root string, args []string) error {
 	for i, f := range streams {
 		everyNode[i] = f.label
 	}
+	cluster := analyze.NewCluster()
+	if err := analyze.Run(st, store.Query{IDs: analyze.ConfigIDs}, cluster); err != nil {
+		return err
+	}
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	entries := make([]openedEntry, 0, len(set.streams))
 	sections, notes := make([]string, 0, 4), make([]string, 0, 4)
@@ -108,6 +114,7 @@ func runLabel(root string, args []string) error {
 		}
 		results, skipped := label.Run(samples, node, stream.Identity().Version, start, end)
 		label.Relate(results)
+		nameMembers(results, cluster)
 		found := false
 		for _, r := range results {
 			if r.Label != name || (*instance != "" && r.Instance != *instance) {
@@ -208,6 +215,9 @@ func renderOpened(o funnel.Opened, options render.TableOptions) string {
 	r := o.Result
 	rule := r.Rule()
 	head := fmt.Sprintf("%s on %s", strings.TrimSpace(r.Label+" "+r.Instance), r.Source)
+	if r.Member != "" {
+		head += " — member " + r.Member
+	}
 	lines := []string{head, strings.Repeat("─", min(len(head), 72)),
 		rule.Title + ". " + strings.Join(strings.Fields(rule.Doc), " "),
 	}

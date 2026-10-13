@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"mongo-log-parser/internal/analyze"
 	"mongo-log-parser/internal/ftdc"
 	"mongo-log-parser/internal/label"
 	"mongo-log-parser/internal/render"
@@ -163,3 +165,18 @@ func describeSpans(spans []memberSpan) string {
 }
 
 func shortMoment(at time.Time) string { return at.UTC().Format("01-02 15:04") }
+
+// nameMembers names the member behind each per-member label by its position in the node's logged
+// config, the order replSetGetStatus lists members in.
+func nameMembers(results []label.Result, cluster *analyze.Cluster) {
+	for i := range results {
+		r := &results[i]
+		if r.Instance == "" || !strings.HasPrefix(r.Rule().Signal.Num[0], "replSetGetStatus/members/") {
+			continue
+		}
+		members := cluster.ConfigMembers(r.Source)
+		if n, err := strconv.Atoi(r.Instance); err == nil && n >= 0 && n < len(members) {
+			r.Member = members[n].String()
+		}
+	}
+}
