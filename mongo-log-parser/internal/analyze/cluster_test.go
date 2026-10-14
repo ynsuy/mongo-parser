@@ -196,3 +196,12 @@ func TestConfigMembersNameEachPosition(t *testing.T) {
 		t.Fatalf("a reordered config still names positions: %+v", got)
 	}
 }
+
+// A member that cannot be elected says so every few seconds; none of those is an election.
+func TestDecliningToStandIsNoElection(t *testing.T) {
+	lines := replLines + `{"t":{"$date":"2026-09-03T10:40:00Z"},"s":"I","c":"ELECTION","id":4615652,"ctx":"ReplCoord-1","msg":"Not starting an election, since we are not electable"}
+`
+	if node := readCluster(t, nodeLog{"node-a", lines}).Nodes()[0]; node.ElectionsCalled != 1 {
+		t.Errorf("elections called %d, want the one real election", node.ElectionsCalled)
+	}
+}

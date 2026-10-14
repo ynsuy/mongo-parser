@@ -26,6 +26,8 @@ type coverageData struct {
 	Unread     []inputCount `json:"not_read"`
 	Point      []inputCount `json:"point_in_time_outputs"`
 	Copies     int          `json:"copies_read_once"`
+	// System is how many events of each kind the operating system's logs held.
+	System map[string]int `json:"os_events,omitempty"`
 }
 
 type inputCount struct {
@@ -36,20 +38,21 @@ type inputCount struct {
 }
 
 type nodeCover struct {
-	ID       int64       `json:"id"`
-	Label    string      `json:"label"`
-	Name     string      `json:"name"`
-	ReplSet  string      `json:"replica_set,omitempty"`
-	Role     string      `json:"role,omitempty"`
-	Version  string      `json:"version,omitempty"`
-	Evidence string      `json:"identified_by"`
-	Aliases  []string    `json:"aliases,omitempty"`
-	LogFirst string      `json:"log_first,omitempty"`
-	LogLast  string      `json:"log_last,omitempty"`
-	Lines    int         `json:"lines"`
-	Streams  int         `json:"log_files"`
-	Starts   int         `json:"startups_logged"`
-	FTDC     []ftdcCover `json:"ftdc,omitempty"`
+	ID       int64          `json:"id"`
+	Label    string         `json:"label"`
+	Name     string         `json:"name"`
+	ReplSet  string         `json:"replica_set,omitempty"`
+	Role     string         `json:"role,omitempty"`
+	Version  string         `json:"version,omitempty"`
+	Evidence string         `json:"identified_by"`
+	Aliases  []string       `json:"aliases,omitempty"`
+	LogFirst string         `json:"log_first,omitempty"`
+	LogLast  string         `json:"log_last,omitempty"`
+	Lines    int            `json:"lines"`
+	Streams  int            `json:"log_files"`
+	Starts   int            `json:"startups_logged"`
+	FTDC     []ftdcCover    `json:"ftdc,omitempty"`
+	System   map[string]int `json:"os_events,omitempty"`
 	logFirst int64
 	logLast  int64
 }
@@ -87,8 +90,8 @@ func runCoverage(root string, args []string) error {
 	return emit(os.Stdout, c.json, "coverage", root, data, renderCoverage(root, data))
 }
 
-var pointInTime = map[string]bool{"shell_output": true, "collector": true, "config": true, "os_log": true}
-var readKinds = map[string]bool{"log_json": true, "log_csv": true, "ftdc": true}
+var pointInTime = map[string]bool{"shell_output": true, "collector": true, "config": true}
+var readKinds = map[string]bool{"log_json": true, "log_csv": true, "ftdc": true, "os_log": true}
 
 func buildCoverage(st *store.Store) (*coverageData, error) {
 	db := st.DB
@@ -179,6 +182,30 @@ func buildCoverage(st *store.Store) (*coverageData, error) {
 		f.First, f.Last = fmtTS(f.first), fmtTS(f.last)
 		if n := nodes[id]; n != nil {
 			n.FTDC = append(n.FTDC, f)
+		}
+	}
+	rows.Close()
+	rows, err = db.Query(`SELECT coalesce(node, 0), kind, count(*) FROM os_event GROUP BY 1, 2`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id int64
+		var kind string
+		var count int
+		if err := rows.Scan(&id, &kind, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if data.System == nil {
+			data.System = map[string]int{}
+		}
+		data.System[kind] += count
+		if n := nodes[id]; n != nil {
+			if n.System == nil {
+				n.System = map[string]int{}
+			}
+			n.System[kind] += count
 		}
 	}
 	rows.Close()
@@ -509,6 +536,17 @@ func blindSpots(st *store.Store, data *coverageData, first, last int64) []blindS
 	if truncated > 0 {
 		add("", "%s lines were cut short by the server itself (attribute size cap): values past the cut are missing from them", thousands(truncated))
 	}
+	// An OS log's lines carry no zone and no year; where the bundle did not say which, it is said here.
+	if rows, err := db.Query(`SELECT clock, count(*) FROM os_event WHERE clock != '' GROUP BY clock ORDER BY count(*) DESC`); err == nil {
+		for rows.Next() {
+			var clock string
+			var count int
+			if rows.Scan(&clock, &count) == nil {
+				add("", "operating system logs: %s: %s", plural(count, "event"), clock)
+			}
+		}
+		rows.Close()
+	}
 	return out
 }
 
@@ -668,6 +706,9 @@ func renderCoverage(root string, d *coverageData) string {
 	if d.Copies > 0 {
 		fmt.Fprintf(&b, "  (%d files in the bundle were exact copies of others and were read once)\n", d.Copies)
 	}
+	if len(d.System) > 0 {
+		fmt.Fprintf(&b, "  (the operating system's logs are read for the events that end a process or stall a machine: %s)\n", eventCounts(d.System))
+	}
 	if len(d.Point) > 0 {
 		b.WriteString("\npoint-in-time outputs (kept, not yet interpreted)\n")
 		for _, in := range d.Point {
@@ -717,6 +758,9 @@ func renderCoverage(root string, d *coverageData) string {
 			for _, f := range n.FTDC {
 				fmt.Fprintf(&b, "      ftdc  %s   %d files\n", span(f.first, f.last), f.Files)
 			}
+			if len(n.System) > 0 {
+				fmt.Fprintf(&b, "      os    %s\n", eventCounts(n.System))
+			}
 			if n.Label != n.Name {
 				fmt.Fprintf(&b, "      name  %s\n", n.Name)
 			}
@@ -742,6 +786,25 @@ func renderCoverage(root string, d *coverageData) string {
 		}
 	}
 	return b.String()
+}
+
+// eventCounts lists event kinds with their counts, most frequent first.
+func eventCounts(counts map[string]int) string {
+	kinds := make([]string, 0, len(counts))
+	for kind := range counts {
+		kinds = append(kinds, kind)
+	}
+	sort.Slice(kinds, func(i, j int) bool {
+		if counts[kinds[i]] != counts[kinds[j]] {
+			return counts[kinds[i]] > counts[kinds[j]]
+		}
+		return kinds[i] < kinds[j]
+	})
+	parts := make([]string, len(kinds))
+	for i, kind := range kinds {
+		parts[i] = fmt.Sprintf("%s %d", strings.ReplaceAll(kind, "_", " "), counts[kind])
+	}
+	return strings.Join(parts, ", ")
 }
 
 func bytesText(n int64) string {

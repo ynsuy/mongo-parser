@@ -125,6 +125,48 @@ func qualified(name string) bool {
 
 func isIP(host string) bool { return ipv4.MatchString(host) }
 
+// podName is a pod's name with its datacenter, when the export said: rs0-0 in dc4 and rs0-0 in dc5
+// are two processes, and the name alone would make them one.
+func podName(id Identity) string {
+	if id.Site == "" {
+		return id.Pod
+	}
+	return id.Pod + "@" + id.Site
+}
+
+func anyQualified(names []string) bool {
+	for _, n := range names {
+		if qualified(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// siteWords splits a datacenter column's value into the words a domain would spell it with:
+// "gcp-ec2" is in ...ec2.gcp.prod.example.net.
+func siteWords(site string) []string {
+	return strings.FieldsFunc(strings.ToLower(site), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+}
+
+func hasWords(have, want []string) bool {
+	if len(want) == 0 {
+		return false
+	}
+	for _, w := range want {
+		found := false
+		for _, h := range have {
+			found = found || h == w
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 func lowerAll(names ...string) []string {
 	var out []string
 	for _, n := range names {
@@ -175,7 +217,7 @@ func resolveNodes(streams []streamRow, ftdcs []ftdcRow) []*nodeRow {
 			it.evidence = append(it.evidence, "log: host and port at startup")
 		}
 		if id.Pod != "" {
-			it.names = append(it.names, lowerAll(id.Pod)...)
+			it.names = append(it.names, lowerAll(podName(id))...)
 			it.evidence = append(it.evidence, "log export: instance column")
 		}
 		items = append(items, it)
@@ -210,6 +252,32 @@ func resolveNodes(streams []streamRow, ftdcs []ftdcRow) []*nodeRow {
 			}
 		}
 	}
+	// A pod name is the same in every datacenter of a stretched cluster. An export that says which
+	// datacenter each row came from settles it: the row's pod joins the one node of that short name
+	// whose domain names that datacenter.
+	bySite := map[int]bool{}
+	for i, it := range items {
+		if it.stream == nil || it.stream.Stats.Identity.Site == "" || it.stream.Stats.Identity.Pod == "" || anyQualified(it.names) {
+			continue
+		}
+		pod := strings.ToLower(it.stream.Stats.Identity.Pod)
+		site := siteWords(it.stream.Stats.Identity.Site)
+		groups := map[int]bool{}
+		for j, other := range items {
+			for _, n := range other.names {
+				if host, _ := shortHost(n); j != i && qualified(n) && host == pod && hasWords(domainWords(n), site) {
+					groups[uf.find(j)] = true
+				}
+			}
+		}
+		if len(groups) == 1 {
+			for g := range groups {
+				uf.join(i, g)
+			}
+			bySite[i] = true
+			it.evidence = append(it.evidence, "log export: pod name and datacenter column")
+		}
+	}
 	// 2. Short names link only when they are unambiguous: at most one group has a full name with
 	// that short form. Then everything carrying the short form joins it. Otherwise nothing joins on
 	// it, and the items keep the groups they have.
@@ -229,6 +297,9 @@ func resolveNodes(streams []streamRow, ftdcs []ftdcRow) []*nodeRow {
 		return keys[k]
 	}
 	for i, it := range items {
+		if bySite[i] {
+			continue
+		}
 		for _, n := range it.names {
 			c := get(claim(n))
 			if qualified(n) {
@@ -556,8 +627,8 @@ func describe(members []*item) *nodeRow {
 	}
 	if n.Name == "" {
 		n.Name = pick(func(it *item) string {
-			if it.stream != nil {
-				return it.stream.Stats.Identity.Pod
+			if it.stream != nil && it.stream.Stats.Identity.Pod != "" {
+				return podName(it.stream.Stats.Identity)
 			}
 			return ""
 		})
@@ -749,6 +820,12 @@ func (in *ingester) writeCatalogue(ftdcs []ftdcRow) ([]*nodeRow, error) {
 			if _, err := tx.Exec(`INSERT INTO ftdc(dir, origin, host, node, first_ts, last_ts, chunks, files, paths, note) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 				f.Dir, f.Origin, f.Identity.Host, n.ID, first, last, f.Chunks, f.Files, string(paths), f.Note); err != nil {
 				return nil, err
+			}
+			for _, run := range f.Runs {
+				if _, err := tx.Exec(`INSERT INTO ftdc_run(node, started_ts, first_ts, last_ts, version, cache_bytes, mem_kb, cpus) VALUES (?,?,?,?,?,?,?,?)`,
+					n.ID, run.Started.UnixMilli(), run.First.UnixMilli(), run.Last.UnixMilli(), run.Version, run.CacheBytes, run.MemKB, run.CPUs); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

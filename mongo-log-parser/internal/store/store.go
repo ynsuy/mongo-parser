@@ -15,7 +15,7 @@ import (
 
 // SchemaVersion changes whenever a table changes shape or what ingest writes into it changes
 // meaning; a store written under another version is rebuilt rather than misread.
-const SchemaVersion = "5"
+const SchemaVersion = "6"
 
 const schema = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -100,6 +100,33 @@ CREATE TABLE silence (
   after_block INTEGER NOT NULL, after_slot INTEGER NOT NULL    -- and its first line after
 );
 
+-- One run of a node's process as its FTDC recorded it: every chunk says how long the process had
+-- been up, so a restart shows even where no log line of it survived, and what it ran on.
+CREATE TABLE ftdc_run (
+  node INTEGER NOT NULL REFERENCES node(id),
+  started_ts INTEGER NOT NULL, -- when the process came up
+  first_ts INTEGER NOT NULL, last_ts INTEGER NOT NULL, -- the part of the run the FTDC covers
+  version TEXT NOT NULL DEFAULT '',
+  cache_bytes INTEGER NOT NULL DEFAULT 0,
+  mem_kb INTEGER NOT NULL DEFAULT 0,
+  cpus INTEGER NOT NULL DEFAULT 0
+);
+
+-- The few lines of an operating system's logs that say why a process went away or a machine
+-- restarted: the OOM killer, an abort, the file table filling up, a disk error, a boot.
+CREATE TABLE os_event (
+  source INTEGER NOT NULL REFERENCES source(id),
+  line INTEGER NOT NULL,
+  node INTEGER REFERENCES node(id), -- empty when the machine runs several nodes or none known
+  host TEXT NOT NULL DEFAULT '',
+  ts INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  process TEXT NOT NULL DEFAULT '', -- the process the line is about: the one killed, the unit
+  detail TEXT NOT NULL DEFAULT '',
+  raw TEXT NOT NULL,
+  clock TEXT NOT NULL DEFAULT '' -- how the line's time was read, when it carried no zone of its own
+);
+
 -- Anything else worth keeping whole: shell outputs, OS logs, collector summaries.
 CREATE TABLE artifact (
   id INTEGER PRIMARY KEY,
@@ -114,6 +141,7 @@ CREATE TABLE artifact (
 const indexes = `
 CREATE INDEX block_time ON block(first_ts, last_ts);
 CREATE INDEX block_stream ON block(stream, first_ts);
+CREATE INDEX block_stream_end ON block(stream, last_ts);
 `
 
 type Store struct {

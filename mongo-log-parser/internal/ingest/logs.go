@@ -6,7 +6,9 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ type Identity struct {
 	Host        string   `json:"host,omitempty"` // "MongoDB starting": the machine's hostname
 	Port        int      `json:"port,omitempty"`
 	Pod         string   `json:"pod,omitempty"`         // the instance column of a log export
+	Site        string   `json:"site,omitempty"`        // the export's datacenter column, when pods repeat across sites
 	Process     string   `json:"process,omitempty"`     // mongod or mongos
 	ClusterRole string   `json:"clusterRole,omitempty"` // shardsvr / configsvr
 	Versions    []string `json:"versions,omitempty"`    // in the order they were seen
@@ -161,6 +164,9 @@ type Stats struct {
 	Last       int64
 	Unparsed   int // exported lines whose attributes could not be converted and stay text
 	Identity   Identity
+	// Zone is the offset the server wrote its first time with ("-07:00"), or "Z". A server that logs
+	// local time says which zone its machine is in, and the machine's other logs do not.
+	Zone string
 }
 
 func (s *Stats) bad(line string) {
@@ -263,10 +269,30 @@ func parseDate(raw json.RawMessage) (int64, bool) {
 	return 0, false
 }
 
+// dateZone is the zone suffix of an ISO $date, empty when it is not one.
+func dateZone(raw json.RawMessage) string {
+	text := strings.Trim(string(raw), `"`)
+	switch {
+	case strings.HasSuffix(text, "Z"):
+		return "Z"
+	case len(text) > 6 && (text[len(text)-6] == '+' || text[len(text)-6] == '-') && text[len(text)-3] == ':':
+		return text[len(text)-6:]
+	case len(text) > 5 && (text[len(text)-5] == '+' || text[len(text)-5] == '-'):
+		return text[len(text)-5:len(text)-2] + ":" + text[len(text)-2:]
+	}
+	return ""
+}
+
 // ReadJSONLog reads MongoDB's structured log. Lines that are not log lines (a banner, a fragment
-// at a cut) are counted, not dropped silently.
-func ReadJSONLog(r io.Reader, emit func(store.Record)) (Stats, error) {
+// at a cut) are counted, not dropped silently. A journal holds the server's lines between systemd's
+// own; those, and the prefix in front of the server's, are handed to other.
+func ReadJSONLog(r io.Reader, emit func(store.Record), other ...func(line string, number int)) (Stats, error) {
 	var stats Stats
+	aside := func(line []byte, number int) {
+		for _, fn := range other {
+			fn(string(line), number)
+		}
+	}
 	err := readLines(r, func(line []byte, number int) error {
 		if len(bytes.TrimSpace(line)) == 0 {
 			return nil
@@ -274,23 +300,32 @@ func ReadJSONLog(r io.Reader, emit func(store.Record)) (Stats, error) {
 		brace := bytes.IndexByte(line, '{')
 		if brace < 0 || brace > 512 {
 			stats.bad(string(line))
+			aside(line, number)
 			return nil
 		}
 		var parsed jsonLine
 		if err := json.Unmarshal(line[brace:], &parsed); err != nil {
 			stats.bad(string(line))
+			aside(line, number)
 			return nil
 		}
 		ts, ok := parseDate(parsed.T.Date)
 		if !ok {
 			stats.bad(string(line))
+			aside(line, number)
 			return nil
+		}
+		if stats.Zone == "" {
+			stats.Zone = dateZone(parsed.T.Date)
 		}
 		rec := store.Record{Line: number, TS: ts, Sev: parsed.S, Comp: parsed.C, LogID: parsed.ID,
 			Ctx: parsed.Ctx, Msg: parsed.Msg, Raw: string(line), Truncated: len(parsed.Truncated) > 0}
 		if brace > 0 && len(parsed.Attr) > 0 {
 			// Something prefixed the line, so the attributes are kept apart from it.
 			rec.SetAttr(string(parsed.Attr))
+		}
+		if brace > 0 {
+			aside(line, number)
 		}
 		stats.seen(ts)
 		stats.Identity.observe(parsed.Msg, parsed.Ctx, parsed.Attr)
@@ -309,8 +344,10 @@ var csvColumns = map[string][]string{
 	"ctx":      {"context_", "context", "ctx"},
 	"message":  {"message", "msg"},
 	"instance": {"instance-id", "pod", "host", "hostname", "kubernetes.pod_name"},
-	"replset":  {"replicaset", "replica_set"},
-	"id":       {"id", "log_id"},
+	// The same pod name runs in every datacenter of a stretched cluster; this column says which.
+	"site":    {"dc", "datacenter", "data_center"},
+	"replset": {"replicaset", "replica_set"},
+	"id":      {"id", "log_id"},
 	// Some exports do not print "msg, attr={...}" into the message at all: they split the line's
 	// attributes into columns of their own, as JSON. Without these the line keeps its text and
 	// loses every number in it — a slow query with no namespace, no plan and a duration of zero.
@@ -327,17 +364,95 @@ type CSVStream struct {
 	Stats    Stats
 }
 
+// An export's time column is often the collector's local time with nothing saying so, and read as
+// UTC it put every line hours away from the FTDC beside it. The server's own clock is still inside
+// some lines — the wall times and cluster times replication writes — so the export's offset is
+// read off them: how far each row's time is from the one the server wrote into it, rounded to the
+// quarter hour zones are made of.
+var (
+	wallTime    = regexp.MustCompile(`(?i)wall\w*['"]?\s*:\s*\{\s*['"]\$date['"]\s*:\s*['"](\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d))['"]`)
+	clusterTime = regexp.MustCompile(`(?i)(?:clusterTime|operationTime)['"]?\s*:\s*\{\s*['"]\$timestamp['"]\s*:\s*\{\s*['"]t['"]\s*:\s*(\d{9,11})\b`)
+)
+
+const (
+	zoneStep    = 15 * 60 * 1000
+	zoneSlack   = 2 * 60 * 1000
+	enoughVotes = 2000
+)
+
+// zoneVotes counts, per offset, the rows that put their time that far from the server's.
+type zoneVotes map[int64]int
+
+func (v zoneVotes) observe(rowTS int64, text string) {
+	if len(v) > 0 && v.total() >= enoughVotes {
+		return
+	}
+	if !strings.Contains(text, "$date") && !strings.Contains(text, "$timestamp") {
+		return
+	}
+	var server []int64
+	for _, m := range wallTime.FindAllStringSubmatch(text, 4) {
+		if t, err := time.Parse(time.RFC3339Nano, m[1]); err == nil {
+			server = append(server, t.UnixMilli())
+		} else if t, err := time.Parse("2006-01-02T15:04:05.999999999-0700", m[1]); err == nil {
+			server = append(server, t.UnixMilli())
+		}
+	}
+	for _, m := range clusterTime.FindAllStringSubmatch(text, 4) {
+		if n, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+			server = append(server, n*1000)
+		}
+	}
+	for _, at := range server {
+		diff := rowTS - at
+		step := (diff + sign(diff)*zoneStep/2) / zoneStep * zoneStep
+		if residual := diff - step; residual < -zoneSlack || residual > zoneSlack || step < -14*3600*1000 || step > 14*3600*1000 {
+			continue
+		}
+		v[step]++
+	}
+}
+
+func sign(n int64) int64 {
+	if n < 0 {
+		return -1
+	}
+	return 1
+}
+
+func (v zoneVotes) total() int {
+	n := 0
+	for _, c := range v {
+		n += c
+	}
+	return n
+}
+
+// offset is the export's distance from UTC when the rows agree on one, with how many said so.
+func (v zoneVotes) offset() (int64, int, bool) {
+	best, count := int64(0), 0
+	for step, c := range v {
+		if c > count || (c == count && step == 0) {
+			best, count = step, c
+		}
+	}
+	total := v.total()
+	return best, count, total >= 5 && count*10 >= total*6
+}
+
 // ReadCSVLog reads a log export: one MongoDB line per row, the attributes printed as
 // "msg, attr={...}" in Python's notation. Every instance in the export is its own stream; streamFor
-// hands out the stream id for an instance the first time it appears.
-func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (map[string]*CSVStream, string, error) {
-	streams := map[string]*CSVStream{}
+// hands out the stream id for an instance the first time it appears. offset is how far ahead of UTC
+// the export's times run, when the lines themselves say; the caller moves them back.
+func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (streams map[string]*CSVStream, note string, offset int64, err error) {
+	streams = map[string]*CSVStream{}
 	var header map[string]int
 	var delimiter rune
 	var pending []byte
 	pendingLine := 0
-	note := ""
-	err := readLines(r, func(line []byte, number int) error {
+	column := ""
+	votes := zoneVotes{}
+	err = readLines(r, func(line []byte, number int) error {
 		if header == nil {
 			delimiter = ';'
 			if bytes.Count(line, []byte(",")) > bytes.Count(line, []byte(";")) {
@@ -353,7 +468,7 @@ func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (map[
 			}
 			for _, name := range csvColumns["time"] {
 				if _, ok := header[name]; ok {
-					note = "times are the export's " + name + " column, read as UTC"
+					column = name
 					break
 				}
 			}
@@ -384,14 +499,20 @@ func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (map[
 			}
 			return ""
 		}
-		instance := get("instance")
-		stats := streamStats(streams, instance)
+		instance, site := get("instance"), get("site")
+		key := instance
+		if site != "" {
+			key = instance + "@" + site
+		}
+		stats := streamStats(streams, key)
 		ts, ok := parseCSVTime(get("time"))
 		if !ok {
 			stats.bad(string(record))
 			return nil
 		}
-		msg, attrText := splitMessage(get("message"))
+		message := get("message")
+		votes.observe(ts, message)
+		msg, attrText := splitMessage(message)
 		msg, plan := splitPlanSummary(msg)
 		attr, truncated := "null", false
 		if attrText != "" {
@@ -405,6 +526,7 @@ func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (map[
 			attr, truncated = converted, strings.HasPrefix(rest, ", truncated=")
 		} else if columns, ok := columnAttr(get("attrs"), get("command"), get("duration"), plan); ok {
 			attr = columns
+			votes.observe(ts, columns)
 		} else if get("attrs") != "" {
 			blob, _ := json.Marshal(map[string]string{"_unparsed": get("attrs")})
 			attr = string(blob)
@@ -419,15 +541,33 @@ func ReadCSVLog(r io.Reader, emit func(instance string, rec store.Record)) (map[
 			}
 		}
 		stats.seen(ts)
-		stats.Identity.Pod = instance
+		stats.Identity.Pod, stats.Identity.Site = instance, site
 		if rs := get("replset"); rs != "" && stats.Identity.ReplSet == "" {
 			stats.Identity.ReplSet = rs
 		}
 		stats.Identity.observe(msg, rec.Ctx, []byte(attr))
-		emit(instance, rec)
+		emit(key, rec)
 		return nil
 	})
-	return streams, note, err
+	if column != "" {
+		step, said, agreed := votes.offset()
+		switch {
+		case agreed && step != 0:
+			offset = step
+			note = fmt.Sprintf("times are the export's %s column, which runs %s ahead of UTC: %d times the server wrote inside its lines say so, and every time was moved back by it",
+				column, zoneText(step), said)
+		case agreed:
+			note = fmt.Sprintf("times are the export's %s column, read as UTC; %d times the server wrote inside its lines agree", column, said)
+		default:
+			note = "times are the export's " + column + " column, read as UTC: no line carried the server's own clock to check it against"
+		}
+	}
+	return streams, note, offset, err
+}
+
+// zoneText writes an offset the way a zone is written: 2h, -5h30m.
+func zoneText(ms int64) string {
+	return strings.TrimSuffix(strings.TrimSuffix(time.Duration(ms*int64(time.Millisecond)).String(), "0s"), "0m")
 }
 
 func streamStats(streams map[string]*CSVStream, instance string) *Stats {

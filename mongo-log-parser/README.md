@@ -4,6 +4,22 @@ Reads a MongoDB support bundle — structured logs, log exports, `diagnostic.dat
 and configs, in any mix of directories and archives — once into a local store, and answers from
 there.
 
+What a bundle holds varies from customer to customer, so files are recognised by their content, not
+their names. The MongoDB log and FTDC are the core. Beside them:
+
+- **Log exports (CSV).** An export's time column is often local time. The zone is read from the server's
+  own times inside the lines (wall times, cluster times) and the rows are moved to UTC. Rows of the
+  same pod in different datacenters stay apart by the export's `dc` column.
+- **Copies.** A file that is an exact copy of another is read once. A log that overlaps another one
+  (the current log and the archive that rotated it) has its repeated lines read once.
+- **Operating-system logs** (syslog, journal, dmesg), when present, are read for the few events that
+  end a process or stall a machine: OOM kills, mongod unit starts and exits, a full file table, hung
+  tasks, disk errors, boots. Their zone and year come from the logs themselves, the machine's other
+  logs, or mongod's own log, and an event says when its time was assumed.
+- **Restarts and machine changes** come from FTDC as well as the log: every chunk records the uptime, the
+  version, the cache size, RAM and CPUs, so a restart, an upgrade or a resized machine shows even
+  where no log line of it survived.
+
 Requires Go 1.26+ and Bash on macOS, Linux, or WSL. From a fresh clone, enter the parser directory:
 
 ```bash

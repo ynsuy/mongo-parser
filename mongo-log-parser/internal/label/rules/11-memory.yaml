@@ -45,7 +45,40 @@ rules:
       - {name: heavy, up: [20, 40]}
     elevated: 10
     min_change: 5
-    pairs_with: [memory.used, memory.page_faults]
+    pairs_with: [memory.used, memory.page_faults, memory.swap_in]
+
+  - name: memory.swap_in
+    title: "Pages swapped in"
+    doc: >-
+      Rate of pages the whole machine read back from swap (vmstat pswpin). A process waits for every
+      such page it touches, so a burst of it stalls whatever was running, even with swap mostly free.
+    signal:
+      mode: rate
+      unit: "pages/s"
+      num: ["systemMetrics/vmstat/pswpin"]
+    levels:
+      - {name: none, down: [10, 50]}
+      - {name: some, band: [10, 50, 500, 1000]}
+      - {name: heavy, up: [500, 1000]}
+    elevated: 500
+    min_change: 50
+    pairs_with: [memory.swap_out, memory.page_faults, memory.swap_used]
+
+  - name: memory.swap_out
+    title: "Pages swapped out"
+    doc: >-
+      Rate of pages the whole machine wrote out to swap (vmstat pswpout).
+    signal:
+      mode: rate
+      unit: "pages/s"
+      num: ["systemMetrics/vmstat/pswpout"]
+    levels:
+      - {name: none, down: [10, 50]}
+      - {name: some, band: [10, 50, 500, 1000]}
+      - {name: heavy, up: [500, 1000]}
+    elevated: 500
+    min_change: 50
+    pairs_with: [memory.swap_in, memory.used, memory.swap_used]
 
   - name: memory.page_faults
     title: "Page faults"

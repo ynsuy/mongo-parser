@@ -25,8 +25,8 @@ type cachedIndex struct {
 // accepted any document with a plausible length, took a corrupt one at the end of a damaged capture
 // for a chunk, and cached the file as whole. Every index written by it is refused and rebuilt, so the
 // damage it missed is found and reported rather than remembered as clean. Version 2 did not know
-// when a file's last sample was taken.
-const indexVersion = 3
+// when a file's last sample was taken, and version 3 what each chunk says about its process.
+const indexVersion = 4
 
 func cacheDir() string {
 	base := os.Getenv("XDG_CACHE_HOME")

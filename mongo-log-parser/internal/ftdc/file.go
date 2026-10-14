@@ -17,6 +17,19 @@ type ChunkInfo struct {
 	Start  time.Time `json:"start"`
 	Offset int64     `json:"offset"`
 	Length int       `json:"length"`
+	Process
+}
+
+// Process is what a chunk's reference document says about the process and the machine it ran on.
+// The uptime tells one run of a process from the next even where no log line of the restart
+// survived, and a run is the only span over which a version, a cache size or a machine's memory
+// can be read as one value.
+type Process struct {
+	UpMillis   int64  `json:"up,omitempty"` // how long the process had been up at the chunk's start
+	Version    string `json:"version,omitempty"`
+	CacheBytes int64  `json:"cache,omitempty"` // WiredTiger's configured cache
+	MemKB      int64  `json:"mem_kb,omitempty"`
+	CPUs       int64  `json:"cpus,omitempty"`
 }
 
 // File is an indexed FTDC file: chunks located and their start times known, deltas untouched.
@@ -89,6 +102,7 @@ func Open(path string) (*File, error) {
 			if when, ok := chunkStart(reference); ok {
 				chunk.Start = when
 			}
+			chunk.Process = processOf(reference)
 		}
 		if chunk.Start.IsZero() {
 			// Older captures can lack a clock column; the envelope id is the collector's own stamp.
@@ -235,6 +249,35 @@ func chunkStart(reference bson.Raw) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func processOf(reference bson.Raw) Process {
+	number := func(path ...string) int64 {
+		value, err := lookup(reference, path...)
+		if err != nil {
+			return 0
+		}
+		if n, ok := value.AsInt64OK(); ok {
+			return n
+		}
+		if f, ok := value.DoubleOK(); ok {
+			return int64(f)
+		}
+		return 0
+	}
+	p := Process{
+		UpMillis:   number("serverStatus", "uptimeMillis"),
+		CacheBytes: number("serverStatus", "wiredTiger", "cache", "maximum bytes configured"),
+		MemKB:      number("systemMetrics", "memory", "MemTotal_kb"),
+		CPUs:       number("systemMetrics", "cpu", "num_logical_cores"),
+	}
+	if p.UpMillis == 0 {
+		p.UpMillis = number("serverStatus", "uptime") * 1000
+	}
+	if value, err := lookup(reference, "serverStatus", "version"); err == nil {
+		p.Version, _ = value.StringValueOK()
+	}
+	return p
 }
 
 func splitPath(path string) []string {

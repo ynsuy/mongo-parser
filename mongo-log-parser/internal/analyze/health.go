@@ -73,6 +73,9 @@ type rule struct {
 	any      []string // the message matches if it contains any of these
 	not      []string // ...and none of these
 	all      []string // ...and all of these
+	// words: a pattern counts only as a word of its own. "oom" is also inside "room" and inside a
+	// document id an error message quotes, and a duplicate key on one is not running out of memory.
+	words bool
 }
 
 // rules are ordered: the first that matches names the line. A more specific condition therefore
@@ -83,7 +86,7 @@ var rules = []rule{
 	{key: "disk", title: "storage error text matched", severity: "high",
 		any: []string{"no space left", "disk full", "quota exceeded", "input/output error", "read-only file system"}},
 	{key: "oom", title: "allocation or out-of-memory text matched", severity: "high",
-		any: []string{"out of memory", "cannot allocate memory", "bad_alloc", "oom"}},
+		any: []string{"out of memory", "cannot allocate memory", "bad_alloc", "oom"}, words: true},
 	{key: "too_stale", title: "staleness or rollback-size text matched", severity: "high",
 		any: []string{"too stale", "rollback too large", "we are too far behind"}},
 	{key: "rollback_files", title: "rollback-file text matched", severity: "medium", any: []string{"rollback file", "writing rollback file"}},
@@ -202,7 +205,7 @@ func (h *Health) Add(record Record) {
 func (r rule) found(text string) string {
 	for _, needles := range [][]string{r.any, r.all} {
 		for _, needle := range needles {
-			if strings.Contains(text, needle) {
+			if contains(text, needle, r.words) {
 				return needle
 			}
 		}
@@ -279,7 +282,7 @@ func matchRule(message string) int {
 		return -1
 	}
 	for index, candidate := range rules {
-		if !containsAll(message, candidate.all) || !containsAny(message, candidate.any) || containsOne(message, candidate.not) {
+		if !containsAll(message, candidate.all, candidate.words) || !containsAny(message, candidate.any, candidate.words) || containsOne(message, candidate.not, false) {
 			continue
 		}
 		return index
@@ -287,9 +290,9 @@ func matchRule(message string) int {
 	return -1
 }
 
-func containsAll(message string, needles []string) bool {
+func containsAll(message string, needles []string, words bool) bool {
 	for _, needle := range needles {
-		if !strings.Contains(message, needle) {
+		if !contains(message, needle, words) {
 			return false
 		}
 	}
@@ -297,18 +300,45 @@ func containsAll(message string, needles []string) bool {
 }
 
 // containsAny is true for an empty list: a rule with no "any" clause is constrained only by "all".
-func containsAny(message string, needles []string) bool {
-	return len(needles) == 0 || containsOne(message, needles)
+func containsAny(message string, needles []string, words bool) bool {
+	return len(needles) == 0 || containsOne(message, needles, words)
 }
 
 // containsOne is false for an empty list, which is what an absent "not" clause has to mean.
-func containsOne(message string, needles []string) bool {
+func containsOne(message string, needles []string, words bool) bool {
 	for _, needle := range needles {
-		if strings.Contains(message, needle) {
+		if contains(message, needle, words) {
 			return true
 		}
 	}
 	return false
+}
+
+// contains finds needle in text, as a word of its own when words is set: no letter or digit on
+// either side of it.
+func contains(text, needle string, words bool) bool {
+	if !words {
+		return strings.Contains(text, needle)
+	}
+	for at := 0; ; {
+		i := strings.Index(text[at:], needle)
+		if i < 0 {
+			return false
+		}
+		i += at
+		if !wordByte(text, i-1) && !wordByte(text, i+len(needle)) {
+			return true
+		}
+		at = i + 1
+	}
+}
+
+func wordByte(s string, i int) bool {
+	if i < 0 || i >= len(s) {
+		return false
+	}
+	b := s[i]
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
 }
 
 // severityOrder ranks fixed review priorities, not MongoDB log severity or incident impact.

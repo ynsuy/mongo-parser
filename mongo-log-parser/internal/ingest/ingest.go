@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"mongo-log-parser/internal/ftdc"
+	"mongo-log-parser/internal/oslog"
 	"mongo-log-parser/internal/source"
 	"mongo-log-parser/internal/store"
 )
@@ -79,6 +80,7 @@ type ingester struct {
 	seenContent map[string]string // content hash -> path of the first copy
 	seenFTDC    map[string]string // SHA-256 of contents -> path of the first copy
 	dupStreams  map[int64]bool
+	shifts      map[int64]int64 // stream -> how far ahead of UTC its times were written
 	// sameFTDC links two FTDC directories that hold a copy of the same file: they are one
 	// diagnostic.data, an archive and its unpacked copy, and reading each file once spreads its
 	// files over both.
@@ -86,6 +88,7 @@ type ingester struct {
 	ftdcDirOf map[string]string // path of a first copy -> its directory
 
 	blocks chan blockOut
+	system []systemLog // the operating-system logs, and journals, that held events
 }
 
 type sourceRow struct {
@@ -126,7 +129,7 @@ func Run(root, dir string, progress Progress) (*store.Store, error) {
 	}
 	in := &ingester{root: root, st: st, tmp: filepath.Join(dir, "tmp"), ftdcDir: filepath.Join(dir, "ftdc"),
 		ftdc: map[string]*ftdcGroup{}, blocks: make(chan blockOut, 64),
-		seenContent: map[string]string{}, seenFTDC: map[string]string{}, dupStreams: map[int64]bool{}}
+		seenContent: map[string]string{}, seenFTDC: map[string]string{}, dupStreams: map[int64]bool{}, shifts: map[int64]int64{}}
 	_ = os.MkdirAll(in.tmp, 0o755)
 	_ = os.MkdirAll(in.ftdcDir, 0o755)
 
@@ -176,6 +179,17 @@ func Run(root, dir string, progress Progress) (*store.Store, error) {
 	if err := in.dropCopies(); err != nil {
 		return nil, err
 	}
+	// Indexed now rather than at the end: moving a stream's times and finding its overlaps look its
+	// blocks up by stream and time.
+	if err := st.BuildIndexes(); err != nil {
+		return nil, err
+	}
+	if err := in.applyShifts(); err != nil {
+		return nil, err
+	}
+	if err := in.dropOverlaps(); err != nil {
+		return nil, err
+	}
 
 	if progress != nil {
 		progress(len(units), len(units), "indexing diagnostic data")
@@ -188,10 +202,10 @@ func Run(root, dir string, progress Progress) (*store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := st.BuildIndexes(); err != nil {
+	if err := in.writeSilences(nodes); err != nil {
 		return nil, err
 	}
-	if err := in.writeSilences(nodes); err != nil {
+	if err := in.writeSystemEvents(nodes); err != nil {
 		return nil, err
 	}
 	errs, _ := json.Marshal(in.errors)
@@ -222,7 +236,8 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 		id := in.ids.stream.Add(1)
 		b := in.newBuilder(id)
 		hash := sha256.New()
-		stats, err := ReadJSONLog(io.TeeReader(content, hash), b.add)
+		system := &oslog.File{}
+		stats, err := ReadJSONLog(io.TeeReader(content, hash), b.add, system.Observe)
 		b.flush()
 		in.mu.Lock()
 		if earlier := in.firstCopy(hash.Sum(nil), e.Path); earlier != "" {
@@ -230,6 +245,7 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 			in.setNote(sourceID, "an exact copy of "+earlier+"; read once")
 		} else {
 			in.streams = append(in.streams, streamRow{ID: id, Source: sourceID, Dir: e.Dir, Name: e.Name, Stats: stats, built: b})
+			in.keepSystem(sourceID, e, system)
 		}
 		in.mu.Unlock()
 		return err
@@ -237,7 +253,7 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 	case source.LogCSV:
 		builders := map[string]*builder{}
 		hash := sha256.New()
-		streams, note, err := ReadCSVLog(io.TeeReader(content, hash), func(instance string, rec store.Record) {
+		streams, note, offset, err := ReadCSVLog(io.TeeReader(content, hash), func(instance string, rec store.Record) {
 			b, ok := builders[instance]
 			if !ok {
 				b = in.newBuilder(in.ids.stream.Add(1))
@@ -264,6 +280,9 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 				b = in.newBuilder(in.ids.stream.Add(1))
 			}
 			in.streams = append(in.streams, streamRow{ID: b.stream, Source: sourceID, Instance: instance, Dir: e.Dir, Name: e.Name, Stats: s.Stats, built: b})
+			if offset != 0 {
+				in.shifts[b.stream] = offset
+			}
 		}
 		in.setNote(sourceID, note)
 		return err
@@ -329,7 +348,25 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 		in.mu.Unlock()
 		return nil
 
-	case source.Shell, source.OSLog, source.Collector, source.Config, source.LogLegacy:
+	case source.OSLog:
+		// Read whole for its events; only the head is kept as text.
+		head := &capped{limit: maxArtifact + 1}
+		hash := sha256.New()
+		system, err := oslog.Scan(io.TeeReader(io.TeeReader(content, hash), head))
+		if err != nil {
+			return err
+		}
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if earlier := in.firstCopy(hash.Sum(nil), e.Path); earlier != "" {
+			in.setNote(sourceID, "an exact copy of "+earlier+"; kept once")
+			return nil
+		}
+		in.keepArtifact(sourceID, head.data)
+		in.keepSystem(sourceID, e, system)
+		return nil
+
+	case source.Shell, source.Collector, source.Config, source.LogLegacy:
 		data, err := io.ReadAll(io.LimitReader(content, maxArtifact+1))
 		if err != nil {
 			return err
@@ -359,6 +396,35 @@ func (in *ingester) visit(e *source.Entry, content io.Reader) error {
 	}
 	_, _ = io.Copy(io.Discard, content)
 	return nil
+}
+
+// capped keeps the first limit bytes written to it and discards the rest.
+type capped struct {
+	limit int
+	data  []byte
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if room := c.limit - len(c.data); room > 0 {
+		c.data = append(c.data, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+// keepArtifact stores a file's text, cut at maxArtifact. Must be called with mu held.
+func (in *ingester) keepArtifact(sourceID int64, data []byte) {
+	note := ""
+	if len(data) > maxArtifact {
+		data = data[:maxArtifact]
+		note = fmt.Sprintf("kept the first %d MiB only", maxArtifact>>20)
+	}
+	text := string(data)
+	for i := range in.sources {
+		if in.sources[i].ID == sourceID {
+			in.sources[i].Artifact = &text
+			in.sources[i].Note = joinNote(in.sources[i].Note, note)
+		}
+	}
 }
 
 // firstCopy registers content seen at path and reports the earlier path when it is a copy.
@@ -528,6 +594,7 @@ type ftdcRow struct {
 	Chunks   int
 	Files    int
 	Note     string
+	Runs     []ftdc.Run
 }
 
 // indexFTDC opens each diagnostic data stream far enough to know its span and whose it is.
@@ -563,6 +630,7 @@ func (in *ingester) indexFTDC() []ftdcRow {
 		row.First, row.Last = first.UnixMilli(), last.UnixMilli()
 		row.Chunks, row.Files = stream.Chunks(), stream.Files()
 		row.Identity = stream.Identity()
+		row.Runs = stream.Runs()
 		var notes []string
 		if n := len(stream.Failures); n > 0 {
 			var names []string

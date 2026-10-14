@@ -220,6 +220,16 @@
           "source": "node-a"
         },
         {
+          "label": "memory.swap_in",
+          "reason": "not in this node's FTDC: systemMetrics/vmstat/pswpin",
+          "source": "node-a"
+        },
+        {
+          "label": "memory.swap_out",
+          "reason": "not in this node's FTDC: systemMetrics/vmstat/pswpout",
+          "source": "node-a"
+        },
+        {
           "label": "memory.page_faults",
           "reason": "not in this node's FTDC: serverStatus/extra_info/page_faults",
           "source": "node-a"
@@ -1223,7 +1233,8 @@
         "pack": "memory",
         "pairs_with": [
           "memory.used",
-          "memory.page_faults"
+          "memory.page_faults",
+          "memory.swap_in"
         ],
         "reading": "each minute's ratio of sums",
         "signal": {
@@ -1240,6 +1251,110 @@
         },
         "title": "Swap in use",
         "unit": "%",
+        "version_text": "all versions",
+        "view": "mean"
+      },
+      {
+        "bands": "none ≤10 (fading to 50) · some 50–500 (edges 10, 1000) · heavy ≥1000 (from 500)",
+        "doc": "Rate of pages the whole machine read back from swap (vmstat pswpin). A process waits for every such page it touches, so a burst of it stalls whatever was running, even with swap mostly free.",
+        "elevated": 500,
+        "formula": "ΔsystemMetrics/vmstat/pswpin per second, in pages/s, at each available sample",
+        "levels": [
+          {
+            "down": [
+              10,
+              50
+            ],
+            "name": "none"
+          },
+          {
+            "band": [
+              10,
+              50,
+              500,
+              1000
+            ],
+            "name": "some"
+          },
+          {
+            "name": "heavy",
+            "up": [
+              500,
+              1000
+            ]
+          }
+        ],
+        "min_change": 50,
+        "name": "memory.swap_in",
+        "pack": "memory",
+        "pairs_with": [
+          "memory.swap_out",
+          "memory.page_faults",
+          "memory.swap_used"
+        ],
+        "reading": "each minute's mean",
+        "signal": {
+          "mode": "rate",
+          "num": [
+            "systemMetrics/vmstat/pswpin"
+          ],
+          "scale": 1,
+          "unit": "pages/s"
+        },
+        "title": "Pages swapped in",
+        "unit": "pages/s",
+        "version_text": "all versions",
+        "view": "mean"
+      },
+      {
+        "bands": "none ≤10 (fading to 50) · some 50–500 (edges 10, 1000) · heavy ≥1000 (from 500)",
+        "doc": "Rate of pages the whole machine wrote out to swap (vmstat pswpout).",
+        "elevated": 500,
+        "formula": "ΔsystemMetrics/vmstat/pswpout per second, in pages/s, at each available sample",
+        "levels": [
+          {
+            "down": [
+              10,
+              50
+            ],
+            "name": "none"
+          },
+          {
+            "band": [
+              10,
+              50,
+              500,
+              1000
+            ],
+            "name": "some"
+          },
+          {
+            "name": "heavy",
+            "up": [
+              500,
+              1000
+            ]
+          }
+        ],
+        "min_change": 50,
+        "name": "memory.swap_out",
+        "pack": "memory",
+        "pairs_with": [
+          "memory.swap_in",
+          "memory.used",
+          "memory.swap_used"
+        ],
+        "reading": "each minute's mean",
+        "signal": {
+          "mode": "rate",
+          "num": [
+            "systemMetrics/vmstat/pswpout"
+          ],
+          "scale": 1,
+          "unit": "pages/s"
+        },
+        "title": "Pages swapped out",
+        "unit": "pages/s",
         "version_text": "all versions",
         "view": "mean"
       },
@@ -5841,7 +5956,8 @@
           "sum": 0
         }
       }
-    ]
+    ],
+    "system_events": []
   },
   "render": ""
 }

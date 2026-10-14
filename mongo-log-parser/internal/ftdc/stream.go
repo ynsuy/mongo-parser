@@ -371,3 +371,74 @@ func (s *Stream) Identity() Identity {
 	}
 	return id
 }
+
+// Run is one life of the process: from when it came up to the last chunk of it the stream holds,
+// with what it ran and on what. A version or a machine change can only take effect at a start, so
+// one run has one of each; when the same run reports two (memory added to a running VM), the
+// latest is kept.
+type Run struct {
+	Started     time.Time // when the process came up: a chunk's start less its uptime
+	First, Last time.Time // the part of the run the stream covers
+	Process
+}
+
+// sameRun is how far apart two chunks' start-less-uptime can be and still be one run: the clock and
+// the uptime are read a moment apart.
+const sameRun = 30 * time.Second
+
+// Runs splits the stream into the runs of its process, oldest first. Chunks without an uptime
+// (a capture too old to record it) are left out.
+func (s *Stream) Runs() []Run {
+	var runs []Run
+	startOf := func(chunk ChunkInfo) time.Time {
+		return chunk.Start.Add(-time.Duration(chunk.UpMillis) * time.Millisecond)
+	}
+	for _, file := range s.files {
+		for i, chunk := range file.chunks {
+			if chunk.UpMillis <= 0 || chunk.Start.IsZero() {
+				continue
+			}
+			started := startOf(chunk)
+			// A chunk ends where the next one of the same run begins. The last chunk of a run — the
+			// process went away during it — is decoded for when its last sample was taken.
+			var end time.Time
+			if i+1 < len(file.chunks) && file.chunks[i+1].UpMillis > 0 && startOf(file.chunks[i+1]).Sub(started).Abs() <= sameRun {
+				end = file.chunks[i+1].Start
+			} else if i == len(file.chunks)-1 {
+				_, end = file.Span()
+			} else {
+				end = chunk.Start
+				if samples, err := decodeRefs([]chunkRef{{file, i, chunk.Start}}, func(string) bool { return false }, nil); err == nil && len(samples.Timestamps) > 0 {
+					end = time.UnixMilli(samples.Timestamps[len(samples.Timestamps)-1]).UTC()
+				}
+			}
+			if n := len(runs); n > 0 && runs[n-1].Started.Sub(started).Abs() <= sameRun {
+				run := &runs[n-1]
+				if end.After(run.Last) {
+					run.Last = end
+				}
+				run.Process = merged(run.Process, chunk.Process)
+				continue
+			}
+			runs = append(runs, Run{Started: started, First: chunk.Start, Last: end, Process: chunk.Process})
+		}
+	}
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].First.Before(runs[j].First) })
+	return runs
+}
+
+func merged(old, latest Process) Process {
+	if latest.Version == "" {
+		latest.Version = old.Version
+	}
+	if latest.CacheBytes == 0 {
+		latest.CacheBytes = old.CacheBytes
+	}
+	if latest.MemKB == 0 {
+		latest.MemKB = old.MemKB
+	}
+	if latest.CPUs == 0 {
+		latest.CPUs = old.CPUs
+	}
+	return latest
+}

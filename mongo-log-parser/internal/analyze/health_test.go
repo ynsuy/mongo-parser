@@ -147,3 +147,19 @@ func TestOnlyLockMessagesAreLockTimeouts(t *testing.T) {
 		}
 	}
 }
+
+// "oom" inside a document id a duplicate-key error quotes is not running out of memory.
+func TestOOMIsAWordNotAPartOfOne(t *testing.T) {
+	oom := -1
+	for i, r := range rules {
+		if r.key == "oom" {
+			oom = i
+		}
+	}
+	if got := matchRule(`e11000 duplicate key error collection: a.b index: _id_ dup key: { _id: "bloom-2026" }`); got == oom {
+		t.Errorf("a document id matched the OOM rule")
+	}
+	if got := matchRule("invoked oom killer"); got != oom {
+		t.Errorf("the word oom matched rule %d, want the OOM rule", got)
+	}
+}

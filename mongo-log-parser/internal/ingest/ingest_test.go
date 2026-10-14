@@ -103,7 +103,7 @@ func TestCSVExportUsesTheServersTimeNotTheCollectors(t *testing.T) {
 	csv := "\"@timestamp\";message;severity;\"instance-id\";\"source_timestamp\"\n" +
 		"\"2026-01-01 12:00:05.000\";\"Slow query, attr={'durationMillis': 5}\";I;\"pod-0\";\"2026-01-01 12:00:01.500\"\n"
 	var got []store.Record
-	_, note, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) })
+	_, note, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) })
 	if err != nil || len(got) != 1 {
 		t.Fatalf("err %v rows %d", err, len(got))
 	}
@@ -301,7 +301,7 @@ func TestExportWithAttributesInColumns(t *testing.T) {
 	csv := `"@timestamp";component;"context_";duration;"instance-id";message;namespace;query;"query_meta";replicaset;severity;"source_timestamp"` + "\n" +
 		`"2026-01-01 12:00:00.500";COMMAND;conn100;100;"rs0-1";"Slow query";example-ns;"{""update"": ""orders"", ""$db"": ""test""}";"{""type"": ""command"", ""ns"": ""test.$cmd"", ""durationMillis"": 100}";"rs0";I;"2026-01-01 12:00:00.000"` + "\n"
 	var got []store.Record
-	if _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil {
+	if _, _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 {
@@ -335,7 +335,7 @@ func TestExportWithAttributesInColumns(t *testing.T) {
 func TestExportWithUnreadableAttributeColumn(t *testing.T) {
 	csv := `"@timestamp";message;"query_meta";"instance-id"` + "\n" +
 		`"2026-01-01 12:00:00.500";"Slow query";"not a document";"rs0-1"` + "\n"
-	streams, _, err := ReadCSVLog(strings.NewReader(csv), func(string, store.Record) {})
+	streams, _, _, err := ReadCSVLog(strings.NewReader(csv), func(string, store.Record) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestCSVExportKeepsThePlanOutOfTheMessage(t *testing.T) {
 		"\"2026-01-01 12:00:00.000\";\"Slow query, planSummary=EXPRESS_IXSCAN { _id: 1 },EXPRESS_UPDATE\";I;\"pod-0\";" +
 		"\"{\"\"type\"\": \"\"update\"\", \"\"ns\"\": \"\"test.orders\"\", \"\"durationMillis\"\": 100}\"\n"
 	var got []store.Record
-	if _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil || len(got) != 1 {
+	if _, _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil || len(got) != 1 {
 		t.Fatalf("err %v rows %d", err, len(got))
 	}
 	if got[0].Msg != "Slow query" {
@@ -371,10 +371,96 @@ func TestCSVExportPrefersThePlanTheAttributesCarry(t *testing.T) {
 		"\"2026-01-01 12:00:00.000\";\"Slow query, planSummary=COLLSCAN\";I;\"pod-0\";" +
 		"\"{\"\"planSummary\"\": \"\"IXSCAN { a: 1 }\"\", \"\"durationMillis\"\": 7}\"\n"
 	var got []store.Record
-	if _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil || len(got) != 1 {
+	if _, _, _, err := ReadCSVLog(strings.NewReader(csv), func(_ string, r store.Record) { got = append(got, r) }); err != nil || len(got) != 1 {
 		t.Fatalf("err %v rows %d", err, len(got))
 	}
 	if !strings.Contains(string(got[0].Attr()), `"planSummary":"IXSCAN { a: 1 }"`) {
 		t.Errorf("attr %s: the message overwrote the attribute the server wrote", got[0].Attr())
+	}
+}
+
+// A stretched cluster's export names the same pod in every datacenter and says which one in its dc
+// column. Each row's pod joins the node of that name whose domain is that datacenter.
+func TestExportPodsJoinTheirDatacentersNode(t *testing.T) {
+	csv := "\"source_timestamp\";message;severity;\"instance-id\";dc\n" +
+		"\"2026-01-01 12:00:01.000\";\"Slow query, attr={'durationMillis': 5}\";I;\"rs0-0\";dc4\n" +
+		"\"2026-01-01 12:00:02.000\";\"Slow query, attr={'durationMillis': 6}\";I;\"rs0-0\";dc5\n"
+	streams, _, _, err := ReadCSVLog(strings.NewReader(csv), func(string, store.Record) {})
+	if err != nil || len(streams) != 2 || streams["rs0-0@dc4"] == nil || streams["rs0-0@dc5"] == nil {
+		t.Fatalf("streams %v err %v, want one per datacenter", streams, err)
+	}
+	var rows []streamRow
+	for _, key := range []string{"rs0-0@dc4", "rs0-0@dc5"} {
+		rows = append(rows, streamRow{Instance: key, Stats: streams[key].Stats})
+	}
+	ftdcs := []ftdcRow{
+		{Origin: "a", Identity: ftdc.Identity{Host: "rs0-0.svc.prod.dc4.local:31017"}, Chunks: 1},
+		{Origin: "b", Identity: ftdc.Identity{Host: "rs0-0.svc.prod.dc5.example.net:31017"}, Chunks: 1},
+	}
+	nodes := resolveNodes(rows, ftdcs)
+	if len(nodes) != 2 {
+		t.Fatalf("got %d nodes, want 2", len(nodes))
+	}
+	for _, n := range nodes {
+		if len(n.members) != 2 {
+			t.Fatalf("node %s has %d members, want its pod's rows and its FTDC", n.Label, len(n.members))
+		}
+		site := n.members[0].stream
+		if site == nil {
+			site = n.members[1].stream
+		}
+		if !strings.Contains(n.Name, "."+site.Stats.Identity.Site+".") {
+			t.Errorf("rows from %s joined %s", site.Stats.Identity.Site, n.Name)
+		}
+	}
+}
+
+// An export whose time column is local time is found out by the times the server wrote inside its
+// lines, and moved back to UTC.
+func TestExportInLocalTimeIsMovedToUTC(t *testing.T) {
+	csv := "\"@timestamp\";message;severity;\"instance-id\"\n"
+	for i := range 6 {
+		csv += fmt.Sprintf("\"2026-01-01 12:0%d:00.100\";\"x, attr={'lastCommittedWall': {'$date': '2026-01-01T10:0%d:00.000Z'}}\";I;\"pod-0\"\n", i, i)
+	}
+	_, note, offset, err := ReadCSVLog(strings.NewReader(csv), func(string, store.Record) {})
+	if err != nil || offset != 2*3600*1000 {
+		t.Fatalf("offset %d err %v, want 2h", offset, err)
+	}
+	if !strings.Contains(note, "2h ahead of UTC") {
+		t.Errorf("note %q does not say so", note)
+	}
+}
+
+// The current log is also the head of the archive that rotated it. Its lines are counted once.
+func TestOverlappingLogsAreReadOnce(t *testing.T) {
+	root := t.TempDir()
+	line := func(i int) string {
+		return fmt.Sprintf(`{"t":{"$date":"2026-01-01T00:00:%02d.000Z"},"s":"I","c":"NETWORK","id":22943,"ctx":"listener","msg":"Connection accepted","attr":{"n":%d}}`, i, i) + "\n"
+	}
+	var archive, current string
+	for i := range 40 {
+		archive += line(i)
+		if i < 25 {
+			current += line(i)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "mongod.log-20260102"), []byte(archive), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mongod.log"), []byte(current), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Run(root, filepath.Join(t.TempDir(), "store"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var lines, streams int
+	if err := st.DB.QueryRow(`SELECT sum(lines) FROM block`).Scan(&lines); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.DB.QueryRow(`SELECT count(*) FROM stream`).Scan(&streams)
+	if lines != 40 || streams != 1 {
+		t.Fatalf("%d lines in %d streams, want the archive's 40 in one", lines, streams)
 	}
 }

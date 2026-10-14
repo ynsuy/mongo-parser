@@ -23,8 +23,10 @@ investigation: never mix evidence from two.
 - `mongo_label` — one label on one node: samples past its mark, its paired labels over the same
   samples, the labels that moved with it, and what that node's log said then. `at` reads the window
   second by second.
-- `mongo_deployment` — versions, roles, storage engine, cache size, replica set, restarts, unclean
-  shutdowns, and the version each restart came up on.
+- `mongo_deployment` — versions, roles, storage engine, cache size, RAM and CPUs, replica set,
+  restarts (from the log, FTDC uptime and systemd), unclean shutdowns, the version each restart came
+  up on, what changed at a restart, runs the OS ended (OOM killer, abort, failed start) and machine
+  events from the OS logs (file table full, hung tasks, disk errors, boots).
 - `mongo_coverage` — which nodes are in the bundle, what each one's logs and FTDC cover, and the gaps.
 - `mongo_metrics` — named FTDC metrics, or the standard board. Several sources share one window.
   Paths take `*` and `?`.

@@ -50,6 +50,7 @@ func runDeployment(root string, args []string) error {
 		return err
 	}
 	deployment.Learn(cluster)
+	joinRuns(st, deployment, start, end)
 
 	processes := deployment.Processes()
 	summary := deployment.Summarize()
@@ -64,11 +65,16 @@ func runDeployment(root string, args []string) error {
 	if restarts := restartLines(processes); restarts != "" {
 		rendered += "\n\n" + restarts
 	}
+	for _, part := range []string{changeLines(processes), endingLines(processes), systemLines(deployment.SystemEvents())} {
+		if part != "" {
+			rendered += "\n\n" + part
+		}
+	}
 	footer := fmt.Sprintf("%sthe bundle holds %s in %s; answered in %s",
 		askedWindow(start, end),
 		plural(q.Parsed, "record"), plural(q.Files, "log stream"), time.Since(started).Round(time.Millisecond))
 	return emit(os.Stdout, c.json, "deployment", root, map[string]any{
-		"processes": processes, "summary": summary, "quality": q,
+		"processes": processes, "summary": summary, "system_events": deployment.SystemEvents(), "quality": q,
 	}, withVersion(rendered+"\n\n"+footer))
 }
 

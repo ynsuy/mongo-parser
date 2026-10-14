@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"mongo-log-parser/internal/analyze"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 // renderStall is the first look at a bundle's labels: the ones worth opening, the ones worth
 // noticing, and a count of the ordinary rest. Each one worth opening names the command that opens
 // it; the ordinary ones are in --json, with what every band means.
-func renderStall(stall funnel.Stall, root string, options render.TableOptions) string {
+func renderStall(stall funnel.Stall, root string, options render.TableOptions, cluster *analyze.Cluster) string {
 	parts := make([]string, 0, 6)
 	if len(stall.Open) > 0 {
 		parts = append(parts, fmt.Sprintf("Worth opening (%d)\n%s", len(stall.Open), stallTable(stall.Open, options)))
@@ -22,7 +23,7 @@ func renderStall(stall funnel.Stall, root string, options render.TableOptions) s
 	if len(stall.Notice) > 0 {
 		parts = append(parts, fmt.Sprintf("Worth noticing (%d)\n%s", len(stall.Notice), stallTable(stall.Notice, options)))
 	}
-	if text := memberNote(append(stall.Open, stall.Notice...)); text != "" {
+	if text := memberNote(append(stall.Open, stall.Notice...), cluster); text != "" {
 		parts = append(parts, text)
 	}
 	if len(stall.Open)+len(stall.Notice) > 0 {
@@ -60,22 +61,39 @@ func stallTable(items []funnel.Item, options render.TableOptions) string {
 	}, options)
 }
 
-// memberNote says which replica set member each numbered instance above is.
-func memberNote(items []funnel.Item) string {
+// memberNote says which replica set member each numbered instance above is, and which members the
+// config has besides: an arbiter or a member no label is about still decides what a majority is.
+func memberNote(items []funnel.Item, cluster *analyze.Cluster) string {
 	lines, seen := make([]string, 0, 8), map[string]bool{}
+	named := map[string]map[string]bool{}
 	for _, i := range items {
 		key := i.Source + " " + i.Instance
 		if i.Member == "" || seen[key] {
 			continue
 		}
 		seen[key] = true
+		if named[i.Source] == nil {
+			named[i.Source] = map[string]bool{}
+		}
+		named[i.Source][i.Member] = true
 		lines = append(lines, fmt.Sprintf("  %s instance %s = %s", i.Source, i.Instance, i.Member))
 	}
 	if len(lines) == 0 {
 		return ""
 	}
 	sort.Strings(lines)
-	return "Members, from the node's logged replica set config:\n" + strings.Join(lines, "\n")
+	var rest []string
+	if cluster != nil {
+		for source, members := range named {
+			for _, m := range cluster.ConfigMembers(source) {
+				if !members[m.String()] {
+					rest = append(rest, fmt.Sprintf("  %s config also has %s", source, m))
+				}
+			}
+		}
+	}
+	sort.Strings(rest)
+	return "Members, from the node's logged replica set config:\n" + strings.Join(append(lines, rest...), "\n")
 }
 
 // ordinaryLine counts the labels that did nothing remarkable, node by node.

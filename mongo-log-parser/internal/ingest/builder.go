@@ -45,7 +45,17 @@ func (b *builder) add(r store.Record) {
 		b.curID = b.in.ids.block.Add(1)
 	}
 	r.Stream, r.Block, r.Slot = b.stream, b.curID, len(b.cur)
-	ref := store.Ref{Block: b.curID, Slot: r.Slot}
+	b.track(&r)
+	b.cur = append(b.cur, r)
+	b.curBytes += len(r.Raw)
+	if len(b.cur) >= blockLines || b.curBytes >= blockBytes {
+		b.flush()
+	}
+}
+
+// track notes where a line sits and whether a gap ends at it.
+func (b *builder) track(r *store.Record) {
+	ref := store.Ref{Block: r.Block, Slot: r.Slot}
 	threshold := int64(store.SilenceMinutes * 60 * 1000)
 	if !b.has {
 		b.has, b.first, b.maxTS = true, ref, r.TS
@@ -62,27 +72,26 @@ func (b *builder) add(r store.Record) {
 	if r.Truncated {
 		b.truncated++
 	}
-	b.cur = append(b.cur, r)
-	b.curBytes += len(r.Raw)
-	if len(b.cur) >= blockLines || b.curBytes >= blockBytes {
-		b.flush()
-	}
 }
 
 func (b *builder) flush() {
 	if len(b.cur) == 0 {
 		return
 	}
-	meta := store.BlockMeta{ID: b.curID, Stream: b.stream, Lines: len(b.cur), First: b.cur[0].TS, Last: b.cur[0].TS}
+	meta, ids := blockMeta(b.curID, b.stream, b.cur)
+	b.in.blocks <- blockOut{meta: meta, ids: ids, data: store.EncodeBlock(b.cur)}
+	b.blocks++
+	b.cur, b.curID, b.curBytes = nil, 0, 0
+}
+
+// blockMeta is what the block table says about a block's lines.
+func blockMeta(id, stream int64, records []store.Record) (store.BlockMeta, string) {
+	meta := store.BlockMeta{ID: id, Stream: stream, Lines: len(records), First: records[0].TS, Last: records[0].TS}
 	ids := map[int]bool{}
-	for i := range b.cur {
-		r := &b.cur[i]
-		if r.TS < meta.First {
-			meta.First = r.TS
-		}
-		if r.TS > meta.Last {
-			meta.Last = r.TS
-		}
+	for i := range records {
+		r := &records[i]
+		meta.First = min(meta.First, r.TS)
+		meta.Last = max(meta.Last, r.TS)
 		meta.SevMask |= store.SevBit(r.Sev)
 		ids[r.LogID] = true
 	}
@@ -91,10 +100,7 @@ func (b *builder) flush() {
 	for id := range ids {
 		fmt.Fprintf(&list, "%d,", id)
 	}
-	data := store.EncodeBlock(b.cur)
-	b.in.blocks <- blockOut{meta: meta, ids: list.String(), data: data}
-	b.blocks++
-	b.cur, b.curID, b.curBytes = nil, 0, 0
+	return meta, list.String()
 }
 
 type blockOut struct {

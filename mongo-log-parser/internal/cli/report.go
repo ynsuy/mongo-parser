@@ -87,6 +87,7 @@ func runReport(root string, args []string) error {
 	// A bundle rotated past the last restart has no startup line to read the set name from, and
 	// the replication lines still carry it.
 	deployment.Learn(cluster)
+	joinRuns(st, deployment, start, end)
 
 	var states []replMember
 	var cacheSizes map[string]float64
@@ -108,8 +109,10 @@ func runReport(root string, args []string) error {
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	chartFrom, chartTo := slowWindow(start, end, q, shapes)
 	bodies := map[string]func() string{
-		"deployment":  func() string { return deploymentSection(processes, running(set, states, cacheSizes), options) },
-		"labels":      func() string { return renderStall(stall, root, options) },
+		"deployment": func() string {
+			return deploymentSection(processes, deployment.SystemEvents(), running(set, states, cacheSizes), options)
+		},
+		"labels":      func() string { return renderStall(stall, root, options, cluster) },
 		"slow":        func() string { return renderShapes(shapes, queries, 8, options) },
 		"replication": func() string { return renderReplication(nodes, cluster, states, q.FirstAt, q.LastAt, 8, options) },
 		"storage":     func() string { return renderStorage(rebuilds, dataSizes(st), 12, options) },
@@ -165,7 +168,7 @@ func runReport(root string, args []string) error {
 	data := map[string]any{"quality": q, "failures": streamFailures}
 	for name, fields := range map[string]func() map[string]any{
 		"deployment": func() map[string]any {
-			return map[string]any{"processes": processes, "deployment_summary": deployment.Summarize()}
+			return map[string]any{"processes": processes, "deployment_summary": deployment.Summarize(), "system_events": deployment.SystemEvents()}
 		},
 		"labels":      func() map[string]any { return map[string]any{"labels": stall, "rules": ruleCatalogue()} },
 		"activity":    func() map[string]any { return map[string]any{"activity": activity} },
@@ -224,14 +227,16 @@ func noLogsNote(st *store.Store) string {
 // deploymentSection is the process table with the version history under it: the table says what is
 // running and the history says how it got there, and an upgrade that was rolled back halfway is
 // only visible in the second.
-func deploymentSection(processes []analyze.Process, fromFTDC []ftdcProcess, options render.TableOptions) string {
+func deploymentSection(processes []analyze.Process, system []store.SystemEvent, fromFTDC []ftdcProcess, options render.TableOptions) string {
 	if len(processes) == 0 && len(fromFTDC) > 0 {
 		return "no startup lines in this window; what each node's FTDC recorded about itself:\n" +
 			renderFTDCProcesses(fromFTDC, options)
 	}
 	body := renderProcesses(processes, options)
-	if history := versionHistory(processes); history != "" {
-		body += "\n\n" + history
+	for _, part := range []string{versionHistory(processes), changeLines(processes), endingLines(processes), systemLines(system)} {
+		if part != "" {
+			body += "\n\n" + part
+		}
 	}
 	return body
 }

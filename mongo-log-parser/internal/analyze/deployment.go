@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"mongo-log-parser/internal/store"
 )
 
 // Process is what one server's log says the server itself is: which binary, which version, what it
@@ -56,7 +58,31 @@ type Process struct {
 	FirstAt time.Time `json:"first_at,omitzero"`
 	LastAt  time.Time `json:"last_at,omitzero"`
 
+	// What the FTDC says about the machine under the latest run.
+	MemoryGB float64 `json:"memory_gb,omitempty"`
+	CPUs     int64   `json:"cpus,omitempty"`
+	// Changes is what differed from one run to the next: the binary, the cache it was given, the
+	// machine under it. Each takes effect at a restart, and every counter breaks there.
+	Changes []RunChange `json:"changes,omitempty"`
+	// Endings is how runs ended, where the operating system said: killed by the OOM killer, aborted.
+	Endings []Ending `json:"endings,omitempty"`
+
 	versions map[string]bool
+}
+
+// RunChange is one thing that was different after a restart.
+type RunChange struct {
+	At   time.Time `json:"at"`
+	What string    `json:"what"`
+	From string    `json:"from"`
+	To   string    `json:"to"`
+}
+
+// Ending is a run that ended other than by being asked to.
+type Ending struct {
+	At   time.Time `json:"at"`
+	Kind string    `json:"kind"` // oom_kill; signal (killed or dumped core); stop_kill (a stop that ended in SIGKILL); error (exited with a failure status)
+	How  string    `json:"how"`
 }
 
 // Upgraded reports whether the process ran more than one version inside the window. Every counter
@@ -80,6 +106,7 @@ func (p Process) Previous() []string {
 type Startup struct {
 	At      time.Time `json:"at"`
 	Version string    `json:"version,omitempty"`
+	From    string    `json:"from,omitempty"` // where it was read when not from the log: ftdc, systemd
 }
 
 // Roles a process can be. A shard or config server is a mongod with a cluster role, and it is worth
@@ -139,6 +166,8 @@ func (p *Process) ranVersion(at time.Time, version string) {
 // Deployment folds the startup and shutdown lines of every log into a picture of what was running.
 type Deployment struct {
 	processes map[string]*Process
+	system    []store.SystemEvent
+	from      time.Time // where the window begins, when Join was told
 }
 
 func NewDeployment() *Deployment { return &Deployment{processes: map[string]*Process{}} }
@@ -500,6 +529,10 @@ type Summary struct {
 	Sharded     bool     `json:"sharded"`
 	Restarts    int      `json:"restarts"`
 	Unclean     int      `json:"unclean_shutdowns"`
+	OOMKills    int      `json:"oom_kills,omitempty"`
+	Crashes     int      `json:"killed_or_crashed,omitempty"` // by a signal: an abort, a segfault, a kill
+	FailedExits int      `json:"failed_exits,omitempty"`      // exited with a failure status, often a start that did not come up
+	StopKills   int      `json:"stops_killed,omitempty"`      // asked to stop, and killed when it did not in time`
 	NoAuth      int      `json:"processes_without_authorization"`
 }
 
@@ -522,8 +555,14 @@ func (d *Deployment) Summarize() Summary {
 		if process.Role == RoleMongos || process.Role == RoleConfig || process.Role == RoleShard {
 			summary.Sharded = true
 		}
-		// A process that started more than once inside the window was restarted inside it.
-		summary.Restarts += max(0, process.Starts-1)
+		// A start is a restart unless it is where the window begins: a log that opens with the
+		// server's greeting caught it starting, not restarting. One that opens mid-run and later
+		// shows a start caught a restart.
+		restarts := process.Starts
+		if restarts > 0 && (d.from.IsZero() || earliest(process.StartedAt).Sub(d.from) < 10*time.Minute) {
+			restarts--
+		}
+		summary.Restarts += restarts
 		summary.Unclean += process.Unclean
 		if process.Authorization == "disabled" {
 			summary.NoAuth++
@@ -533,6 +572,20 @@ func (d *Deployment) Summarize() Summary {
 		summary.Roles = append(summary.Roles, strconv.Itoa(count)+" "+role)
 	}
 	sort.Strings(summary.Roles)
+	for _, process := range d.processes {
+		for _, ending := range process.Endings {
+			switch ending.Kind {
+			case "oom_kill":
+				summary.OOMKills++
+			case "signal":
+				summary.Crashes++
+			case "stop_kill":
+				summary.StopKills++
+			default:
+				summary.FailedExits++
+			}
+		}
+	}
 	summary.ReplicaSets = sortedKeys(sets)
 	summary.Versions = sortedKeys(versions)
 	summary.Engines = sortedKeys(engines)
@@ -546,4 +599,206 @@ func sortedKeys(set map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// sameStart is how far apart two accounts of one start can be: systemd says it started the unit a
+// moment before the server logs its greeting, and FTDC's uptime is read a moment after.
+const sameStart = 2 * time.Minute
+
+// started records a start read somewhere other than the log, unless the log or another source
+// already has it.
+func (p *Process) started(at time.Time, version, from string) {
+	for i, start := range p.StartedAt {
+		if start.At.Sub(at).Abs() < sameStart {
+			if p.StartedAt[i].Version == "" {
+				p.StartedAt[i].Version = version
+			}
+			return
+		}
+	}
+	p.Starts++
+	if at.After(p.LastStartAt) {
+		p.LastStartAt = at
+	}
+	if len(p.StartedAt) < maxStarts {
+		p.StartedAt = append(p.StartedAt, Startup{At: at, Version: version, From: from})
+	}
+}
+
+func (d *Deployment) process(source string) *Process {
+	process := d.processes[source]
+	if process == nil {
+		process = &Process{Source: source, Role: RoleMongod, versions: map[string]bool{}}
+		d.processes[source] = process
+	}
+	return process
+}
+
+// Join adds what the FTDC and the operating system's logs say about each node's runs: starts the
+// log did not catch, the version and cache of the latest run, the machine under it, what changed
+// at each restart, and how runs that were not shut down ended. A node's log rarely covers its whole
+// history; its FTDC usually covers the restarts the log lost, and only the OS saw it killed.
+func (d *Deployment) Join(runs []store.Run, events []store.SystemEvent, from, to time.Time) {
+	d.from = from
+	inside := func(at time.Time) bool {
+		return (from.IsZero() || !at.Before(from)) && (to.IsZero() || !at.After(to))
+	}
+	var previous *store.Run
+	for i := range runs {
+		run := &runs[i]
+		if previous != nil && previous.Node != run.Node {
+			previous = nil
+		}
+		if !inside(run.First) && !inside(run.Last) && !(run.First.Before(from) && run.Last.After(to)) {
+			previous = run
+			continue
+		}
+		p := d.process(run.Node)
+		if p.ReplicaSet == "" {
+			p.ReplicaSet = run.Set
+		}
+		switch {
+		case strings.Contains(run.Role, "mongos"):
+			p.Role = RoleMongos
+		case strings.Contains(run.Role, "(shard)"):
+			p.Role = RoleShard
+		case strings.Contains(run.Role, "(config server)"):
+			p.Role = RoleConfig
+		}
+		switch {
+		case inside(run.Started):
+			p.started(run.Started, run.Version, "ftdc")
+		case run.Started.After(p.LastStartAt):
+			// Up since before anything in the window: when it came up is still worth knowing.
+			p.LastStartAt = run.Started
+		}
+		if run.Version != "" {
+			p.versions[run.Version] = true
+			if !run.Started.Before(p.VersionAt) {
+				p.Version, p.VersionAt = run.Version, run.Started
+			}
+		}
+		if run.CacheBytes > 0 {
+			p.CacheGB = roundTenth(float64(run.CacheBytes) / (1 << 30))
+		}
+		if run.MemKB > 0 {
+			p.MemoryGB = roundTenth(float64(run.MemKB) / (1 << 20))
+		}
+		if run.CPUs > 0 {
+			p.CPUs = run.CPUs
+		}
+		if previous != nil {
+			p.Changes = append(p.Changes, runChanges(*previous, *run)...)
+		}
+		previous = run
+	}
+	// systemd logs a stop it had to finish with SIGKILL as the process killed, then the unit
+	// stopped, in the same second. A crash has no stop after it.
+	stoppedAfter := func(i int) bool {
+		for _, next := range events[i+1:] {
+			if next.At.Sub(events[i].At) > 5*time.Second {
+				return false
+			}
+			if next.Kind == "service_stop" && next.Host == events[i].Host {
+				return true
+			}
+		}
+		return false
+	}
+	for i, e := range events {
+		if !inside(e.At) {
+			continue
+		}
+		// A unit's starts and stops are read into the runs; listed again they are only noise.
+		if e.Kind != "service_start" && e.Kind != "service_stop" {
+			d.system = append(d.system, e)
+		}
+		if e.Node == "" || !strings.HasPrefix(e.Process, "mongo") {
+			continue
+		}
+		p := d.process(e.Node)
+		switch e.Kind {
+		case "service_start":
+			p.started(e.At, "", "systemd")
+		case "oom_kill":
+			p.ended(e.At, "oom_kill", "killed by the kernel's OOM killer ("+e.Detail+")")
+		case "segfault":
+			p.ended(e.At, "signal", "segfault ("+e.Detail+")")
+		case "service_exit":
+			switch {
+			case strings.Contains(e.Detail, "status=0/SUCCESS"):
+			case strings.Contains(e.Detail, "code=exited"):
+				p.ended(e.At, "error", e.Process+".service exited: "+e.Detail)
+			case stoppedAfter(i):
+				p.ended(e.At, "stop_kill", "stopped by systemd, and killed when it did not exit in time: "+e.Detail)
+			default:
+				p.ended(e.At, "signal", e.Process+".service exited: "+e.Detail)
+			}
+		}
+	}
+	for _, p := range d.processes {
+		killed := 0
+		for _, e := range p.Endings {
+			if e.Kind != "error" {
+				killed++
+			}
+		}
+		p.Unclean = max(p.Unclean, killed)
+	}
+}
+
+// ended records how a run ended. The kernel's kill and systemd's account of the process going are
+// one ending.
+func (p *Process) ended(at time.Time, kind, how string) {
+	if n := len(p.Endings); n > 0 && kind != "oom_kill" && p.Endings[n-1].Kind == "oom_kill" && at.Sub(p.Endings[n-1].At).Abs() < sameStart {
+		p.Endings[n-1].How += "; " + how
+		return
+	}
+	p.Endings = append(p.Endings, Ending{At: at, Kind: kind, How: how})
+}
+
+func runChanges(before, after store.Run) []RunChange {
+	var out []RunChange
+	add := func(what, from, to string) {
+		if from != "" && to != "" && from != to {
+			out = append(out, RunChange{At: after.Started, What: what, From: from, To: to})
+		}
+	}
+	gib := func(bytes int64, unit float64) string {
+		if bytes <= 0 {
+			return ""
+		}
+		return strconv.FormatFloat(roundTenth(float64(bytes)/unit), 'f', -1, 64) + "G"
+	}
+	count := func(n int64) string {
+		if n <= 0 {
+			return ""
+		}
+		return strconv.FormatInt(n, 10)
+	}
+	add("version", before.Version, after.Version)
+	add("cache", gib(before.CacheBytes, 1<<30), gib(after.CacheBytes, 1<<30))
+	add("memory", gib(before.MemKB, 1<<20), gib(after.MemKB, 1<<20))
+	add("cpus", count(before.CPUs), count(after.CPUs))
+	return out
+}
+
+func earliest(starts []Startup) time.Time {
+	var first time.Time
+	for _, s := range starts {
+		if first.IsZero() || s.At.Before(first) {
+			first = s.At
+		}
+	}
+	return first
+}
+
+func roundTenth(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
+
+// SystemEvents is what the operating system's logs said inside the window, oldest first.
+func (d *Deployment) SystemEvents() []store.SystemEvent {
+	if d.system == nil {
+		return []store.SystemEvent{}
+	}
+	return d.system
 }

@@ -391,6 +391,9 @@ func (c *Cluster) Add(record Record) {
 	case strings.Contains(message, "election failed"), strings.Contains(message, "not becoming primary"):
 		node.ElectionsLost++
 		c.unstable.Add(record.At, 0, 0)
+	// "Not starting an election, since we are not electable" is a node saying it will not stand:
+	// a hidden or priority-0 member logs it every few seconds, and it is no election at all.
+	case strings.Contains(message, "not starting an election"):
 	// A dry run asks whether an election could be won; the real attempt that may follow logs
 	// "Starting an election". Counting both reports one election as two.
 	case strings.Contains(message, "starting an election"):

@@ -306,7 +306,7 @@ func walkZip(parent *Entry, r io.Reader, onDisk, tmp string, visit Visit, depth 
 
 var (
 	legacyLogLine = regexp.MustCompile(`(?m)^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{4} [IWEFD]\d? +[A-Z_-]+ +\[`)
-	syslogLine    = regexp.MustCompile(`(?m)^[A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \S+ `)
+	syslogLine    = regexp.MustCompile(`(?m)^(?:[A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2}|\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)) \S+ \S+?(?:\[\d+\])?: `)
 	dmesgLine     = regexp.MustCompile(`(?m)^\[\s*\d+\.\d+\] `)
 	shellPrompt   = regexp.MustCompile(`(?m)^(\w[\w.-]*:(PRIMARY|SECONDARY|ARBITER|OTHER)> |\S+ \[direct: \w+\] \S+> |mongos> )`)
 	foreignName   = regexp.MustCompile(`(?i)mysql|mariadb|innodb|postgres|pg_stat|ndb-status|my\.cnf`)
@@ -360,16 +360,21 @@ func classify(name string, head []byte) (Kind, string) {
 	case isMongoConfig(lower, head):
 		return Config, ""
 	case strings.HasPrefix(lower, "messages") || strings.HasPrefix(lower, "syslog") || strings.HasPrefix(lower, "kern"):
-		if syslogLine.Match(firstLines(head, 5)) {
+		if syslogLine.Match(firstLines(nonEmpty(head), 5)) {
 			return OSLog, "syslog"
 		}
 	case foreignName.MatchString(lower):
 		return Foreign, ""
 	}
-	if syslogLine.Match(firstLines(head, 5)) {
+	if syslogLine.Match(firstLines(nonEmpty(head), 5)) {
 		return OSLog, "syslog"
 	}
 	return Other, ""
+}
+
+// nonEmpty drops the blank lines a copied log often opens with.
+func nonEmpty(head []byte) []byte {
+	return bytes.TrimLeft(head, "\r\n\t ")
 }
 
 // shellByContent recognises the shell outputs people paste into a text file under any name.
@@ -435,15 +440,20 @@ func isJSONLogHead(head []byte) bool {
 	return false
 }
 
-// isCSVLogHead: a header row naming a time, a severity and a message column.
+// isCSVLogHead: a header row naming a time and a message column, and either a severity column or
+// rows whose messages are MongoDB's "msg, attr={...}". Some exports keep nothing but the time and
+// the message, and they are still the server's log.
 func isCSVLogHead(head []byte) bool {
 	line := head
 	if end := bytes.IndexByte(head, '\n'); end >= 0 {
 		line = head[:end]
 	}
 	lower := bytes.ToLower(line)
-	return bytes.Contains(lower, []byte("timestamp")) && bytes.Contains(lower, []byte("message")) &&
-		bytes.Contains(lower, []byte("severity")) && (bytes.Contains(line, []byte(";")) || bytes.Contains(line, []byte(",")))
+	if !bytes.Contains(lower, []byte("message")) || !(bytes.Contains(lower, []byte("timestamp")) || bytes.Contains(lower, []byte("time"))) ||
+		!(bytes.Contains(line, []byte(";")) || bytes.Contains(line, []byte(","))) {
+		return false
+	}
+	return bytes.Contains(lower, []byte("severity")) || bytes.Contains(head[len(line):], []byte(", attr={"))
 }
 
 // isFTDCHead: BSON documents back to back, each opening with its length and the "_id" the server

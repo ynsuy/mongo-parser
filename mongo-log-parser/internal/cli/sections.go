@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"mongo-log-parser/internal/metrics"
 	"mongo-log-parser/internal/render"
 	"mongo-log-parser/internal/series"
+	"mongo-log-parser/internal/store"
 )
 
 // The sections here are shared between the overall report and the commands that show one of them in
@@ -57,6 +59,24 @@ func renderProcesses(processes []analyze.Process, options render.TableOptions) s
 			return p.LastStartAt.Format("01-02 15:04")
 		})},
 		{Title: "Engine", Values: text(func(p analyze.Process) string { return orDash(p.StorageEngine) })},
+		// The machine under the latest run, as its FTDC recorded it.
+		{Title: "RAM", Align: render.AlignRight, Values: text(func(p analyze.Process) string {
+			switch {
+			case p.MemoryGB == 0:
+				return "-"
+			case p.MemoryGB >= 1024:
+				return strconv.FormatFloat(p.MemoryGB/1024, 'f', 1, 64) + "T"
+			case p.MemoryGB >= 100:
+				return strconv.FormatFloat(p.MemoryGB, 'f', 0, 64) + "G"
+			}
+			return render.Compact(p.MemoryGB) + "G"
+		})},
+		{Title: "CPUs", Align: render.AlignRight, Values: text(func(p analyze.Process) string {
+			if p.CPUs == 0 {
+				return "-"
+			}
+			return strconv.FormatInt(p.CPUs, 10)
+		})},
 		{Title: "Cache", Align: render.AlignRight, Values: text(func(p analyze.Process) string {
 			if p.CacheGB == 0 {
 				return "-"
@@ -93,6 +113,18 @@ func deploymentLine(summary analyze.Summary) string {
 	}
 	if summary.Unclean > 0 {
 		parts = append(parts, plural(summary.Unclean, "unclean shutdown"))
+	}
+	if summary.OOMKills > 0 {
+		parts = append(parts, plural(summary.OOMKills, "OOM kill"))
+	}
+	if summary.Crashes > 0 {
+		parts = append(parts, plural(summary.Crashes, "kill by a signal"))
+	}
+	if summary.StopKills > 0 {
+		parts = append(parts, plural(summary.StopKills, "stop")+" that needed a kill")
+	}
+	if summary.FailedExits > 0 {
+		parts = append(parts, plural(summary.FailedExits, "failed exit"))
 	}
 	return strings.Join(parts, " | ")
 }
@@ -680,4 +712,154 @@ func shortHost(name string) string {
 		host = label
 	}
 	return host + ":" + port
+}
+
+// joinRuns adds to the deployment what the FTDC and the operating system's logs say about each
+// node's runs, which the log alone often cannot: restarts it did not catch, how a run ended.
+func joinRuns(st *store.Store, deployment *analyze.Deployment, start, end time.Time) {
+	// With no window asked for, the window is the bundle: a process that came up before anything
+	// in it was recorded did not restart inside it.
+	if start.IsZero() {
+		var first sql.NullInt64
+		_ = st.DB.QueryRow(`SELECT min(t) FROM (SELECT min(first_ts) AS t FROM stream UNION ALL SELECT min(first_ts) FROM ftdc)`).Scan(&first)
+		if first.Valid {
+			start = time.UnixMilli(first.Int64).UTC()
+		}
+	}
+	runs, _ := st.Runs()
+	events, _ := st.SystemEvents(start, end)
+	deployment.Join(runs, events, start, end)
+}
+
+// changeLines says what was different after a restart: the cache a node was given, the machine
+// under it. The version has its own history above.
+func changeLines(processes []analyze.Process) string {
+	var lines []string
+	for _, p := range processes {
+		for _, c := range p.Changes {
+			if c.What == "version" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("%-40s %s  %s %s → %s", p.Source, c.At.Format("01-02 15:04"), c.What, c.From, c.To))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "changed at a restart\n" + strings.Join(lines, "\n")
+}
+
+// endingLines says how runs ended that were not asked to: only the operating system saw it.
+func endingLines(processes []analyze.Process) string {
+	var lines []string
+	for _, p := range processes {
+		for _, e := range p.Endings {
+			lines = append(lines, fmt.Sprintf("%-40s %s  %s", p.Source, e.At.Format("01-02 15:04:05"), e.How))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "runs that ended without being shut down\n" + strings.Join(lines, "\n")
+}
+
+// systemLines is the rest of what the operating system's logs said about the machines: a full file
+// table, tasks hung on I/O, disk errors, boots. The process kills are under the runs they ended.
+func systemLines(events []store.SystemEvent) string {
+	type tally struct {
+		count       int
+		first, last time.Time
+		who         map[string]int
+		where       string
+	}
+	tallies := map[string]*tally{}
+	var order []string
+	type line struct {
+		at   time.Time
+		text string
+	}
+	var lines []line
+	clocks := map[string]bool{}
+	for _, e := range events {
+		where := e.Node
+		if where == "" {
+			where = e.Host
+		}
+		if e.Clock != "" {
+			clocks[e.Clock] = true
+		}
+		switch e.Kind {
+		case "service_start", "service_stop", "service_exit", "oom_kill", "segfault":
+			if e.Node != "" || e.Kind == "service_start" || e.Kind == "service_stop" {
+				continue
+			}
+		}
+		text := ""
+		switch e.Kind {
+		case "hung_task", "io_error":
+			key := e.Kind + "|" + where
+			if e.Kind == "io_error" {
+				key += "|" + e.Detail
+			}
+			t := tallies[key]
+			if t == nil {
+				t = &tally{first: e.At, who: map[string]int{}, where: where}
+				tallies[key] = t
+				order = append(order, key)
+			}
+			t.count++
+			t.last = e.At
+			t.who[e.Process+e.Detail]++
+			continue
+		case "file_max":
+			text = "the kernel's file table was full (file-max " + strings.TrimPrefix(e.Detail, "limit ") + "): no process on the machine could open a file or a socket"
+		case "boot":
+			text = "the machine booted (kernel " + e.Detail + ")"
+		case "oom_kill":
+			text = e.Process + " killed by the kernel's OOM killer (" + e.Detail + ")"
+		case "segfault":
+			text = e.Process + " segfault (" + e.Detail + ")"
+		case "service_exit":
+			if strings.Contains(e.Detail, "status=0/SUCCESS") {
+				continue
+			}
+			text = e.Process + ".service exited: " + e.Detail
+		default:
+			continue
+		}
+		lines = append(lines, line{e.At, fmt.Sprintf("%-40s %s  %s", where, e.At.Format("01-02 15:04:05"), text)})
+	}
+	for _, key := range order {
+		t := tallies[key]
+		kind := strings.SplitN(key, "|", 2)[0]
+		var who []string
+		for name, n := range t.who {
+			who = append(who, fmt.Sprintf("%s ×%d", name, n))
+		}
+		sort.Strings(who)
+		text := ""
+		if kind == "hung_task" {
+			text = fmt.Sprintf("%s blocked for 120 s or more, until %s (%s)", plural(t.count, "task"), t.last.Format("01-02 15:04"), strings.Join(who, ", "))
+		} else {
+			text = fmt.Sprintf("%s, until %s (%s)", plural(t.count, "disk I/O error"), t.last.Format("01-02 15:04"), strings.Join(who, ", "))
+		}
+		lines = append(lines, line{t.first, fmt.Sprintf("%-40s %s  %s", t.where, t.first.Format("01-02 15:04:05"), text)})
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at.Before(lines[j].at) })
+	out := "the operating system's logs"
+	for _, l := range lines {
+		out += "\n" + l.text
+	}
+	notes := make([]string, 0, len(clocks))
+	for clock := range clocks {
+		notes = append(notes, clock)
+	}
+	sort.Strings(notes)
+	for _, note := range notes {
+		out += "\ntimes: " + note
+	}
+	return out
 }
