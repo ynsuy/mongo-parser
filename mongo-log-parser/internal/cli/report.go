@@ -2,14 +2,15 @@ package cli
 
 import (
 	"fmt"
+	"maps"
 	"math"
-	"mongo-log-parser/internal/funnel"
-	"mongo-log-parser/internal/label"
 	"os"
 	"strings"
 	"time"
 
 	"mongo-log-parser/internal/analyze"
+	"mongo-log-parser/internal/funnel"
+	"mongo-log-parser/internal/label"
 	"mongo-log-parser/internal/render"
 	"mongo-log-parser/internal/store"
 )
@@ -55,23 +56,49 @@ func runReport(root string, args []string) error {
 		return err
 	}
 
+	// --only decides what is computed, not just what is printed: every section but labels reads the
+	// log, and labels, deployment and replication read the FTDC labels. A narrow question pays for
+	// its own sections only.
+	needLogs, needLabels := false, false
+	for name, on := range wanted {
+		needLogs = needLogs || (on && name != "labels")
+		needLabels = needLabels || (on && (name == "labels" || name == "deployment" || name == "replication"))
+	}
+
 	// One pass over the stored lines feeds every log-shaped aggregate at once. A section that
 	// needed its own pass would cost the whole bundle again, so everything that reads a log line
 	// reads it here.
 	groups, queries, cluster := analyze.NewGrouper(), analyze.NewSlowQueries(), analyze.NewCluster()
 	deployment, catalogue := analyze.NewDeployment(), analyze.NewDDL()
 	health, activity, rebuilds := analyze.NewHealth(), analyze.NewActivity(), analyze.NewRebuilds()
-	if err := analyze.Run(st, windowQuery(start, end), groups, queries, cluster, deployment, catalogue, health, activity, rebuilds); err != nil {
-		return err
+	if needLogs {
+		if err := analyze.Run(st, windowQuery(start, end), groups, queries, cluster, deployment, catalogue, health, activity, rebuilds); err != nil {
+			return err
+		}
+	} else if needLabels {
+		// The labels still name replica set members from the config the log printed, and only
+		// the blocks holding those lines are opened for it.
+		configs := windowQuery(start, end)
+		configs.IDs = analyze.ConfigIDs
+		if err := analyze.Run(st, configs, cluster); err != nil {
+			return err
+		}
 	}
 	// A bundle rotated past the last restart has no startup line to read the set name from, and
 	// the replication lines still carry it.
 	deployment.Learn(cluster)
 
-	states, labelled, cacheSizes, labelFailures := labelStreams(set, start, end)
-	nameMembers(labelled.Results, cluster)
-	streamFailures = append(streamFailures, labelFailures...)
-	stall := funnel.Lay(labelled.Results, labelled.Imbalances, labelled.Skipped, openCommand(root))
+	var states []replMember
+	var cacheSizes map[string]float64
+	var stall funnel.Stall
+	if needLabels {
+		var labelled labels
+		var labelFailures []string
+		states, labelled, cacheSizes, labelFailures = labelStreams(set, start, end)
+		nameMembers(labelled.Results, cluster)
+		streamFailures = append(streamFailures, labelFailures...)
+		stall = funnel.Lay(labelled.Results, labelled.Imbalances, labelled.Skipped, openCommand(root))
+	}
 
 	shapes := queries.Shapes()
 	logGroups := groups.Groups()
@@ -80,26 +107,31 @@ func runReport(root string, args []string) error {
 
 	options := render.TableOptions{Width: outputWidth(c.width), Color: useColor(*color) && !c.json}
 	chartFrom, chartTo := slowWindow(start, end, q, shapes)
-	bodies := map[string]string{
-		"deployment":  deploymentSection(processes, running(set, states, cacheSizes), options),
-		"labels":      renderStall(stall, root, options),
-		"slow":        renderShapes(shapes, queries, 8, options),
-		"replication": renderReplication(nodes, cluster, states, q.FirstAt, q.LastAt, 8, options),
-		"storage":     renderStorage(rebuilds, dataSizes(st), 12, options),
-		"ddl":         renderCatalogue(catalogue, 6, options),
-		"signals":     renderSignals(health.Signals(), 12, options),
-		"logs":        renderGroups(logGroups, 10, options),
-	}
-	if !*noChart {
-		if chart := activityChart(activity, chartFrom, chartTo, 0, options.Width, options.Color); chart != "" {
-			bodies["activity"] = chart + "\n\n" + severityLine(activity)
-		}
-	}
-	if bodies["activity"] == "" {
-		bodies["activity"] = severityLine(activity)
+	bodies := map[string]func() string{
+		"deployment":  func() string { return deploymentSection(processes, running(set, states, cacheSizes), options) },
+		"labels":      func() string { return renderStall(stall, root, options) },
+		"slow":        func() string { return renderShapes(shapes, queries, 8, options) },
+		"replication": func() string { return renderReplication(nodes, cluster, states, q.FirstAt, q.LastAt, 8, options) },
+		"storage":     func() string { return renderStorage(rebuilds, dataSizes(st), 12, options) },
+		"ddl":         func() string { return renderCatalogue(catalogue, 6, options) },
+		"signals":     func() string { return renderSignals(health.Signals(), 12, options) },
+		"logs":        func() string { return renderGroups(logGroups, 10, options) },
+		"activity": func() string {
+			body := severityLine(activity)
+			if !*noChart {
+				if chart := activityChart(activity, chartFrom, chartTo, 0, options.Width, options.Color); chart != "" {
+					body = chart + "\n\n" + body
+				}
+			}
+			return body
+		},
 	}
 
-	sections := []string{reportHeading(root, st, q, set, start, end, activity, deployment.Summarize())}
+	heading := reportHeading(root, st, q, set, start, end, activity, deployment.Summarize())
+	if !needLogs {
+		heading = strings.Replace(heading, windowLines(q, activity), "logs     not read: --only asked for no section that reads them", 1)
+	}
+	sections := []string{heading}
 	if q.Files == 0 && len(set.streams) == 0 {
 		return emit(os.Stdout, c.json, "report", root, map[string]any{"quality": q},
 			withVersion(sections[0]+"\n\n"+noLogsNote(st)))
@@ -116,10 +148,12 @@ func runReport(root string, args []string) error {
 		}
 	}
 	for _, name := range reportSections {
-		if !wanted[name] || bodies[name] == "" {
+		if !wanted[name] {
 			continue
 		}
-		sections = append(sections, section(sectionTitle(name), bodies[name]))
+		if body := bodies[name](); body != "" {
+			sections = append(sections, section(sectionTitle(name), body))
+		}
 	}
 
 	footer := fmt.Sprintf("%s in %s, %s; %s; drill down with: metrics, slow, logs, lines, ddl, health, deployment, coverage",
@@ -128,13 +162,24 @@ func runReport(root string, args []string) error {
 	if len(streamFailures) > 0 {
 		footer = strings.Join(streamFailures, "; ") + "\n" + footer
 	}
-	data := map[string]any{
-		"slow_queries": reportShapes(shapes, root), "log_groups": logGroups,
-		"nodes": nodes, "migrations": cluster.Migrations(), "processes": processes,
-		"deployment_summary": deployment.Summarize(), "index_builds": catalogue.Builds(),
-		"catalogue_changes": catalogue.Changes(), "signals": health.Signals(), "activity": activity,
-		"quality": q, "failures": streamFailures,
-		"labels": stall, "rules": ruleCatalogue(),
+	data := map[string]any{"quality": q, "failures": streamFailures}
+	for name, fields := range map[string]func() map[string]any{
+		"deployment": func() map[string]any {
+			return map[string]any{"processes": processes, "deployment_summary": deployment.Summarize()}
+		},
+		"labels":      func() map[string]any { return map[string]any{"labels": stall, "rules": ruleCatalogue()} },
+		"activity":    func() map[string]any { return map[string]any{"activity": activity} },
+		"slow":        func() map[string]any { return map[string]any{"slow_queries": reportShapes(shapes, root)} },
+		"replication": func() map[string]any { return map[string]any{"nodes": nodes, "migrations": cluster.Migrations()} },
+		"ddl": func() map[string]any {
+			return map[string]any{"index_builds": catalogue.Builds(), "catalogue_changes": catalogue.Changes()}
+		},
+		"signals": func() map[string]any { return map[string]any{"signals": health.Signals()} },
+		"logs":    func() map[string]any { return map[string]any{"log_groups": logGroups} },
+	} {
+		if wanted[name] {
+			maps.Copy(data, fields())
+		}
 	}
 	return emit(os.Stdout, c.json, "report", root, data, withVersion(strings.Join(sections, "\n\n")+"\n\n"+footer))
 }

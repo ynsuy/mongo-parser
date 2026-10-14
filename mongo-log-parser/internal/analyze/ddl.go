@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"mongo-log-parser/internal/store"
 )
 
 // A catalogue change is the thing a log can explain that no chart can. An index build takes a
@@ -64,6 +66,15 @@ func NewDDL() *DDL {
 // ddlCommands are the commands that change the catalogue. They are read off the command document of
 // a slow query line, which is how a DDL that took long enough to be logged is caught whatever the
 // server called the message: the command's own name does not change between versions.
+// ddlCommandNames are ddlCommands' names, for a scan of a command's keys.
+var ddlCommandNames = func() []string {
+	names := make([]string, 0, len(ddlCommands))
+	for name := range ddlCommands {
+		names = append(names, name)
+	}
+	return names
+}()
+
 var ddlCommands = map[string]string{
 	"createIndexes":                  "create index",
 	"dropIndexes":                    "drop index",
@@ -191,6 +202,23 @@ func commandTarget(message string) string {
 
 // addSlowDDL reads a catalogue change out of a slow query line, which is where a long one lands.
 func (d *DDL) addSlowDDL(record Record) {
+	// Nearly every slow query is a read or a write; only a command naming a DDL command at its top
+	// level is decoded. The scan matches keys ignoring case, so it never passes over one the decode
+	// below would have taken.
+	if command, found, ok := store.Field(string(record.Attr()), "command"); ok {
+		if !found {
+			return
+		}
+		if names, ok := store.Fields(command, ddlCommandNames...); ok {
+			named := false
+			for _, value := range names {
+				named = named || value != ""
+			}
+			if !named {
+				return
+			}
+		}
+	}
 	var attributes ddlAttributes
 	if !record.DecodeAttributes(&attributes) || len(attributes.Command) == 0 {
 		return

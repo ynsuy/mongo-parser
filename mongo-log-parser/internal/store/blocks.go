@@ -38,6 +38,10 @@ type Record struct {
 	Truncated bool
 	attr      string // the attributes as JSON when they are not inside Raw (an export's rows)
 	Raw       string
+
+	// The attributes cut out of Raw, once: several analyzers read every line's.
+	attrRaw  json.RawMessage
+	attrRead bool
 }
 
 // Attr is the line's attributes as JSON, or nil.
@@ -45,9 +49,22 @@ func (r *Record) Attr() json.RawMessage {
 	if r.attr != "" {
 		return json.RawMessage(r.attr)
 	}
+	if !r.attrRead {
+		r.attrRaw, r.attrRead = r.readAttr(), true
+	}
+	return r.attrRaw
+}
+
+func (r *Record) readAttr() json.RawMessage {
 	start := strings.IndexByte(r.Raw, '{')
 	if start < 0 {
 		return nil
+	}
+	if value, found, ok := Field(r.Raw[start:], "attr"); ok {
+		if !found {
+			return nil
+		}
+		return json.RawMessage(value)
 	}
 	var line struct {
 		Attr json.RawMessage `json:"attr"`
@@ -366,13 +383,15 @@ func (s *Store) Scan(q Query, fn func(*Record) bool) error {
 		}
 		return metas[next].First
 	}
+	ahead := s.prefetch(metas)
+	defer ahead.stop()
 	open := func() error {
-		m := metas[next]
 		next++
-		records, err := s.block(m.ID)
+		records, err := ahead.take(next - 1)
 		if err != nil {
 			return err
 		}
+		s.cache.put(metas[next-1].ID, records)
 		c := &cursor{records: records, newest: q.Newest}
 		if q.Newest {
 			c.at = len(records) - 1
@@ -406,6 +425,79 @@ func (s *Store) Scan(q Query, fn func(*Record) bool) error {
 		}
 	}
 	return nil
+}
+
+// prefetcher decodes the blocks a scan will open, in the order it will open them, a few at a time
+// on other cores: one scan of a large bundle was one core inflating blocks while the rest idled.
+type prefetcher struct {
+	results []chan prefetched
+	window  chan struct{}
+	done    chan struct{}
+	feeder  sync.WaitGroup
+}
+
+type prefetched struct {
+	records []Record
+	err     error
+}
+
+const (
+	prefetchAhead   = 32 // blocks decoded or decoding ahead of the merge
+	prefetchWorkers = 6
+)
+
+func (s *Store) prefetch(metas []BlockMeta) *prefetcher {
+	p := &prefetcher{results: make([]chan prefetched, len(metas)), window: make(chan struct{}, prefetchAhead),
+		done: make(chan struct{})}
+	for i := range p.results {
+		p.results[i] = make(chan prefetched, 1)
+	}
+	workers := make(chan struct{}, prefetchWorkers)
+	p.feeder.Add(1)
+	go func() {
+		defer p.feeder.Done()
+		for i, m := range metas {
+			select {
+			case p.window <- struct{}{}:
+			case <-p.done:
+				return
+			}
+			if records, ok := s.cache.get(m.ID); ok {
+				p.results[i] <- prefetched{records: records}
+				continue
+			}
+			// The store's one connection reads the blobs in turn; the decoding is what spreads.
+			var stream int64
+			var data []byte
+			if err := s.DB.QueryRow(`SELECT stream, data FROM block WHERE id = ?`, m.ID).Scan(&stream, &data); err != nil {
+				p.results[i] <- prefetched{err: fmt.Errorf("block %d: %w", m.ID, err)}
+				continue
+			}
+			workers <- struct{}{}
+			go func(slot int, id, stream int64, data []byte) {
+				defer func() { <-workers }()
+				records, err := DecodeBlock(id, stream, data)
+				if err != nil {
+					err = fmt.Errorf("block %d: %w", id, err)
+				}
+				p.results[slot] <- prefetched{records: records, err: err}
+			}(i, m.ID, stream, data)
+		}
+	}()
+	return p
+}
+
+// take waits for block i and frees its place in the window.
+func (p *prefetcher) take(i int) ([]Record, error) {
+	got := <-p.results[i]
+	<-p.window
+	return got.records, got.err
+}
+
+// stop ends the feeding when a scan stops early, and waits for it to let go of the connection.
+func (p *prefetcher) stop() {
+	close(p.done)
+	p.feeder.Wait()
 }
 
 type cursor struct {

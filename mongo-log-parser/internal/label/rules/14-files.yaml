@@ -1,0 +1,25 @@
+pack: files
+description: >-
+  The machine's open file handles, from /proc/sys/fs/file-nr. Every connection, WiredTiger file and
+  journal holds one, and so does every other process on the host.
+
+rules:
+
+  - name: files.handles
+    title: "File handles in use"
+    doc: >-
+      File handles allocated on the whole machine, every process together. FTDC does not record the
+      kernel's limit (fs.file-max), so the bands are fixed reference counts, not a share of this
+      host's limit; when the limit is reached the kernel refuses new files and sockets to every
+      process. A climb that never comes back down is worth reading beside connections.
+    signal:
+      mode: gauge
+      unit: "handles"
+      num: ["systemMetrics/files/sys_file_handles_in_use"]
+    levels:
+      - {name: normal, down: [15000, 30000]}
+      - {name: many, band: [15000, 30000, 60000, 90000]}
+      - {name: very_high, up: [60000, 90000]}
+    elevated: 60000
+    min_change: 2000
+    pairs_with: [connections.current]

@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 	"path/filepath"
+	"sync"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -48,50 +48,49 @@ func (s *Samples) damaged(path string, err error) {
 // clockPaths are the columns that carry a chunk's sample clock, most specific first.
 var clockPaths = []string{"serverStatus/start", "start"}
 
-func (s *Samples) append(chunk *chunkData) {
-	base := len(s.Timestamps)
-	for path, kind := range chunk.kinds {
-		s.Kinds[path] = kind
-	}
-	s.Timestamps = append(s.Timestamps, chunk.timestamps...)
-	for path, values := range chunk.values {
-		series, seen := s.Values[path]
-		if !seen {
-			series = make([]float64, 0, base+len(values))
-			for range base {
-				series = append(series, math.NaN())
-			}
-		}
-		for len(series) < base {
-			series = append(series, math.NaN())
-		}
-		s.Values[path] = append(series, values...)
-	}
-	// Paths this chunk did not carry stay aligned by padding with gaps.
-	for path, series := range s.Values {
-		if _, present := chunk.values[path]; present {
-			continue
-		}
-		for len(series) < len(s.Timestamps) {
-			series = append(series, math.NaN())
-		}
-		s.Values[path] = series
-	}
-}
-
 type chunkData struct {
 	timestamps []int64
 	values     map[string][]float64
 	kinds      map[string]string
 }
 
+// keepMasks remembers, for one read, which columns of each layout the selector keeps: asking the
+// selector about every column of every chunk cost as much as the decode.
+type keepMasks struct {
+	sync.Mutex
+	byLayout map[*layout][]bool
+}
+
+func (m *keepMasks) of(l *layout, want Selector) []bool {
+	if want == nil {
+		return nil
+	}
+	m.Lock()
+	defer m.Unlock()
+	if mask, ok := m.byLayout[l]; ok {
+		return mask
+	}
+	mask := make([]bool, len(l.paths))
+	for i, path := range l.paths {
+		mask[i] = want(path)
+	}
+	if m.byLayout == nil {
+		m.byLayout = map[*layout][]bool{}
+	}
+	m.byLayout[l] = mask
+	return mask
+}
+
 // decodeChunk inflates one chunk and walks its delta stream.
 // Unwanted columns still advance the cursor — the stream is column-major — but nothing is kept.
-func decodeChunk(compressed []byte, want Selector) (*chunkData, error) {
+func decodeChunk(compressed []byte, want Selector, masks *keepMasks) (*chunkData, error) {
 	payload, err := inflate(compressed)
 	if err != nil {
 		return nil, err
 	}
+	// Nothing decoded keeps a reference into the payload: values are copied out and paths are
+	// built as strings of their own.
+	defer payloads.Put(&payload)
 	if len(payload) < 13 {
 		return nil, fmt.Errorf("truncated FTDC chunk header")
 	}
@@ -99,84 +98,85 @@ func decodeChunk(compressed []byte, want Selector) (*chunkData, error) {
 	if referenceLength < 5 || referenceLength > len(payload)-8 {
 		return nil, fmt.Errorf("invalid FTDC reference document length")
 	}
-	reference := bson.Raw(payload[:referenceLength])
 	metricCount := int(binary.LittleEndian.Uint32(payload[referenceLength:]))
 	deltaCount := int(binary.LittleEndian.Uint32(payload[referenceLength+4:]))
 
-	found, err := columns(reference)
+	shape, starts, err := layoutOf(payload[:referenceLength])
 	if err != nil {
 		return nil, err
 	}
-	if len(found) != metricCount {
-		return nil, fmt.Errorf("FTDC attribute count mismatch: reference has %d, header claims %d", len(found), metricCount)
+	if len(shape.paths) != metricCount {
+		return nil, fmt.Errorf("FTDC attribute count mismatch: reference has %d, header claims %d", len(shape.paths), metricCount)
 	}
 	if deltaCount < 0 || metricCount*(deltaCount+1) > 64<<20 {
 		return nil, fmt.Errorf("FTDC samples exceed the decoder budget")
 	}
+	keep := masks.of(shape, want)
 
-	chunk := &chunkData{values: make(map[string][]float64, metricCount), kinds: make(map[string]string, metricCount)}
-	clocks := map[string][]uint64{}
-	reader := bytes.NewReader(payload[referenceLength+8:])
-	var zerosLeft uint64
-	for _, c := range found {
-		keep := want == nil || want(c.path)
-		isClock := false
-		for _, path := range clockPaths {
-			isClock = isClock || c.path == path
+	kept := metricCount
+	if keep != nil {
+		kept = 0
+		for _, k := range keep {
+			if k {
+				kept++
+			}
 		}
+	}
+	chunk := &chunkData{values: make(map[string][]float64, kept), kinds: make(map[string]string, kept)}
+	deltas := payload[referenceLength+8:]
+	var zerosLeft uint64
+	for column, path := range shape.paths {
+		keeping := keep == nil || keep[column]
+		isClock := column == shape.clock
 		var values []float64
 		var raw []uint64
-		if keep {
+		if keeping {
 			values = make([]float64, 0, deltaCount+1)
-			values = append(values, c.value(c.start))
+			values = append(values, float64(int64(starts[column])))
 		}
 		if isClock {
 			raw = make([]uint64, 0, deltaCount+1)
-			raw = append(raw, c.start)
+			raw = append(raw, starts[column])
 		}
-		accumulated := c.start
+		accumulated := starts[column]
 		for range deltaCount {
 			var delta uint64
 			if zerosLeft > 0 {
 				zerosLeft--
 			} else {
-				delta, err = binary.ReadUvarint(reader)
-				if err != nil {
-					return nil, fmt.Errorf("truncated FTDC deltas at %s: %w", c.path, err)
+				var n int
+				delta, n = binary.Uvarint(deltas)
+				if n <= 0 {
+					return nil, fmt.Errorf("truncated FTDC deltas at %s", path)
 				}
+				deltas = deltas[n:]
 				if delta == 0 {
 					// A literal zero is followed by the count of further zeros, and that run
 					// continues across column boundaries.
-					zerosLeft, err = binary.ReadUvarint(reader)
-					if err != nil {
-						return nil, fmt.Errorf("invalid FTDC zero run at %s: %w", c.path, err)
+					zerosLeft, n = binary.Uvarint(deltas)
+					if n <= 0 {
+						return nil, fmt.Errorf("invalid FTDC zero run at %s", path)
 					}
+					deltas = deltas[n:]
 				}
 			}
 			accumulated += delta
-			if keep {
-				values = append(values, c.value(accumulated))
+			if keeping {
+				values = append(values, float64(int64(accumulated)))
 			}
 			if isClock {
 				raw = append(raw, accumulated)
 			}
 		}
-		if keep {
-			chunk.values[c.path] = values
-			chunk.kinds[c.path] = c.kind.String()
+		if keeping {
+			chunk.values[path] = values
+			chunk.kinds[path] = shape.kinds[column]
 		}
 		if isClock {
-			clocks[c.path] = raw
-		}
-	}
-
-	for _, path := range clockPaths {
-		if raw, ok := clocks[path]; ok {
 			chunk.timestamps = make([]int64, len(raw))
 			for i, value := range raw {
 				chunk.timestamps[i] = int64(value)
 			}
-			break
 		}
 	}
 	if len(chunk.timestamps) == 0 {
@@ -212,6 +212,11 @@ func referenceOf(compressed []byte) (bson.Raw, error) {
 	return bson.Raw(document), nil
 }
 
+var zlibReaders sync.Pool
+
+// payloads are inflated chunks' buffers, handed back once a chunk is decoded.
+var payloads sync.Pool
+
 func inflate(compressed []byte) ([]byte, error) {
 	if len(compressed) < 4 {
 		return nil, fmt.Errorf("truncated FTDC chunk")
@@ -220,17 +225,32 @@ func inflate(compressed []byte) ([]byte, error) {
 	if declared < 0 || declared > maxInflated {
 		return nil, fmt.Errorf("FTDC chunk exceeds the decoder budget")
 	}
-	reader, err := zlib.NewReader(bytes.NewReader(compressed[4:]))
-	if err != nil {
+	source := bytes.NewReader(compressed[4:])
+	var reader io.ReadCloser
+	if pooled, ok := zlibReaders.Get().(io.ReadCloser); ok && pooled.(zlib.Resetter).Reset(source, nil) == nil {
+		reader = pooled
+	} else {
+		var err error
+		if reader, err = zlib.NewReader(source); err != nil {
+			return nil, err
+		}
+	}
+	defer func() {
+		reader.Close()
+		zlibReaders.Put(reader)
+	}()
+	// The declared length sizes the buffer once; a chunk that inflates to more still reads whole,
+	// up to the budget.
+	backing := make([]byte, 0, declared+bytes.MinRead)
+	if pooled, ok := payloads.Get().(*[]byte); ok && cap(*pooled) >= declared+bytes.MinRead {
+		backing = (*pooled)[:0]
+	}
+	buffer := bytes.NewBuffer(backing)
+	if _, err := buffer.ReadFrom(io.LimitReader(reader, maxInflated+1)); err != nil {
 		return nil, err
 	}
-	defer reader.Close()
-	payload, err := io.ReadAll(io.LimitReader(reader, maxInflated+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(payload) > maxInflated {
+	if buffer.Len() > maxInflated {
 		return nil, fmt.Errorf("FTDC chunk exceeds the decoder budget")
 	}
-	return payload, nil
+	return buffer.Bytes(), nil
 }

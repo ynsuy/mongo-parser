@@ -21,10 +21,7 @@ type Options struct {
 	TargetBins int
 }
 
-type point struct {
-	at    time.Time
-	value float64
-}
+type point = Point
 
 // Build produces one renderable series for a metric path.
 func Build(samples *ftdc.Samples, source, path string, options Options) series.Series {
@@ -123,16 +120,16 @@ func summarize(built series.Series, points []point, samples *ftdc.Samples, optio
 		return built
 	}
 	if built.BucketSeconds == 0 {
-		span := points[len(points)-1].at.Sub(points[0].at)
+		span := points[len(points)-1].At.Sub(points[0].At)
 		built.BucketSeconds = AutoBucketSecondsFor(span, SampleInterval(samples), options.TargetBins)
 	}
 	values := make([]float64, len(points))
 	peak := points[0]
 	var sum float64
 	for i, p := range points {
-		values[i] = p.value
-		sum += p.value
-		if p.value > peak.value {
+		values[i] = p.Value
+		sum += p.Value
+		if p.Value > peak.Value {
 			peak = p
 		}
 	}
@@ -140,7 +137,7 @@ func summarize(built series.Series, points []point, samples *ftdc.Samples, optio
 	built.Stats = &series.Stats{
 		Min: values[0], Avg: sum / float64(len(values)), Median: median(values),
 		P95: values[int(math.Ceil(float64(len(values))*0.95))-1], Max: values[len(values)-1],
-		Peak: &series.Peak{Timestamp: peak.at.UTC().Format(time.RFC3339Nano), Value: peak.value},
+		Peak: &series.Peak{Timestamp: peak.At.UTC().Format(time.RFC3339Nano), Value: peak.Value},
 	}
 	built.Buckets = bucket(points, built.BucketSeconds)
 	scale := series.Scale{Min: values[0], Max: values[len(values)-1]}
@@ -155,21 +152,21 @@ func bucket(points []point, seconds int64) []series.Bucket {
 	buckets := make([]series.Bucket, 0, len(points))
 	index := map[int64]int{}
 	for _, p := range points {
-		key := p.at.Unix() / seconds * seconds
+		key := p.At.Unix() / seconds * seconds
 		at, seen := index[key]
 		if !seen {
 			index[key] = len(buckets)
 			buckets = append(buckets, series.Bucket{
 				Start: time.Unix(key, 0).UTC().Format(time.RFC3339),
-				Min:   p.value, Max: p.value,
+				Min:   p.Value, Max: p.Value,
 			})
 			at = len(buckets) - 1
 		}
 		b := &buckets[at]
 		b.Samples++
-		b.Avg += p.value
-		b.Min = math.Min(b.Min, p.value)
-		b.Max = math.Max(b.Max, p.value)
+		b.Avg += p.Value
+		b.Min = math.Min(b.Min, p.Value)
+		b.Max = math.Max(b.Max, p.Value)
 	}
 	for i := range buckets {
 		buckets[i].Avg /= float64(buckets[i].Samples)
@@ -259,10 +256,5 @@ type Point struct {
 // Points is a metric read the way its mode says, every sample in the window, for whoever needs the
 // readings rather than a chart of them. A counter's restarts are dropped the way a chart drops them.
 func Points(samples *ftdc.Samples, path, mode string, from, to time.Time) []Point {
-	derived := derive(samples, path, mode, from, to)
-	out := make([]Point, len(derived))
-	for i, p := range derived {
-		out[i] = Point{p.at, p.value}
-	}
-	return out
+	return derive(samples, path, mode, from, to)
 }

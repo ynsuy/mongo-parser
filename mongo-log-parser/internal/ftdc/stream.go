@@ -2,6 +2,7 @@ package ftdc
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,6 +68,12 @@ type chunkRef struct {
 // it is. It runs on the decoding goroutines, so it has to be safe to call from several.
 func (s *Stream) Read(from, to time.Time, want Selector, done func(chunks, total int)) (*Samples, error) {
 	return decodeRefs(selectWindow(s.refs(), from, to), want, done)
+}
+
+// ReadLast decodes only the newest chunks, for a question about how things stood at the end.
+func (s *Stream) ReadLast(chunks int, want Selector) (*Samples, error) {
+	refs := s.refs()
+	return decodeRefs(refs[max(0, len(refs)-chunks):], want, nil)
 }
 
 // Paths lists the metric names this stream carries in a window, by decoding one chunk of it.
@@ -149,6 +156,7 @@ func decodeRefs(refs []chunkRef, want Selector, done func(chunks, total int)) (*
 	}
 
 	decoded := make([]*chunkData, len(refs))
+	masks := &keepMasks{}
 	failures := make([]error, len(refs))
 	limit := make(chan struct{}, max(1, min(4, runtime.NumCPU())))
 	var finished atomic.Int64
@@ -169,13 +177,14 @@ func decodeRefs(refs []chunkRef, want Selector, done func(chunks, total int)) (*
 				failures[slot] = err
 				return
 			}
-			decoded[slot], failures[slot] = decodeChunk(payload, want)
+			decoded[slot], failures[slot] = decodeChunk(payload, want, masks)
 		}()
 	}
 	wait.Wait()
 
 	samples := &Samples{Values: map[string][]float64{}, Kinds: map[string]string{}}
 	var firstFailure error
+	total := 0
 	for i, chunk := range decoded {
 		if failures[i] != nil {
 			samples.damaged(refs[i].file.Path, failures[i])
@@ -184,7 +193,30 @@ func decodeRefs(refs []chunkRef, want Selector, done func(chunks, total int)) (*
 			}
 			continue
 		}
-		samples.append(chunk)
+		total += len(chunk.timestamps)
+	}
+	// Every series is made once at its full length: grown chunk by chunk, a week of samples was
+	// copied over and over on its way there.
+	samples.Timestamps = make([]int64, 0, total)
+	for i, chunk := range decoded {
+		if failures[i] != nil {
+			continue
+		}
+		offset := len(samples.Timestamps)
+		samples.Timestamps = append(samples.Timestamps, chunk.timestamps...)
+		for path, values := range chunk.values {
+			series, seen := samples.Values[path]
+			if !seen {
+				series = make([]float64, total)
+				for j := range series {
+					series[j] = math.NaN()
+				}
+				samples.Values[path] = series
+			}
+			copy(series[offset:], values)
+			samples.Kinds[path] = chunk.kinds[path]
+		}
+		decoded[i] = nil
 	}
 	// Every chunk gone is a different answer from some of them gone: there is nothing to draw and
 	// nothing to say about the window, so the caller hears why rather than seeing an empty chart.

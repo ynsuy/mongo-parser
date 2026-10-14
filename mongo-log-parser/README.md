@@ -48,6 +48,7 @@ the ones above it.
 | Describing it | `label` (FTDC), `analyze` (logs) | `label` turns FTDC into labels from the rules in `internal/label/rules`; `analyze` turns stored log lines into slow query shapes, replication events, catalogue changes, logged conditions and log groups. |
 | Narrowing | `funnel` | The stall (every label, sorted for a first look) and an opened label (its stretches, its pairs, its windows). |
 | Showing | `render`, `cli` | Terminal tables and charts, and one command per question. |
+| Serving agents | `mcpserver`, `guard` | `mongo-log-parser mcp` serves every command as an MCP tool over stdio; `mongo-log-parser hook` is the PreToolUse hook that keeps file and shell tools out of the bundles this machine has stores for. |
 
 ## The rules
 
@@ -69,6 +70,24 @@ DBA_FTDC_DIR=/path/to/diagnostic.data go test ./internal/label -run TestRulesRea
 Every rule, its signal, its bands and what it pairs with is laid out for review in
 `../docs/labels-review.xlsx`; `scripts/labels-review.py` regenerates it from the built binary.
 
+## Agents
+
+`mongo-log-parser mcp` is an MCP server over stdio. Every tool takes the bundle as `path` and runs
+the matching command with `--json`; the answer reaches the model without its drawn text, in pages of
+48 KiB (`MONGO_LOG_PARSER_MCP_PAGE_BYTES`) that `mongo_page` returns in order. The tools are marked
+read-only. Add it to any MCP client by hand, or install the `mongo-diagnoser` plugin, which also
+brings the investigation skill and the hook:
+
+```bash
+claude mcp add mongo -- /path/to/mongo-log-parser mcp
+codex mcp add mongo -- /path/to/mongo-log-parser mcp
+```
+
+`mongo-log-parser hook` reads a PreToolUse payload. A Read, Grep, Glob or Bash call that touches a
+bundle — one this machine has a store for, or a path shaped like one (`diagnostic.data`,
+`mongod*.log*`) — is put to the user in Claude Code and refused in Codex. A Bash command that only
+runs `mongo-log-parser` passes. `MONGO_LOG_PARSER_RAW_READS=1` lets everything through.
+
 ## Versions
 
 `scripts/build.sh` stamps the binary with `scripts/version.sh`: the nearest `mongo-log-parser/vX.Y.Z`
@@ -77,8 +96,10 @@ there is no git. `mongo-log-parser version` prints it; pidba displays it, becaus
 stale binary answers in the same format as a current one.
 
 Time-series charts are compact Unicode bar strips (`▁▂▃▄▅▆▇█`), one bar per time bin, with a UTC axis
-and a line of figures (avg, p95, max and when) per strip; tables use plain ASCII borders.
-A blank cell is zero; `·` on the floor is a bin with no samples. Streams of one metric share a scale.
+labelled at every row and a line of figures (min, avg, p95, max and when) per strip; tables use plain
+ASCII borders. Bars stand on zero, except a series that moves less than its distance from zero
+(12.2k↔13.2k), which stands on a round floor under its minimum; the axis prints the floor either way.
+A blank cell is the floor; `·` on the floor is a bin with no samples. Streams of one metric share a scale.
 `~` marks a shortened display name or cell; full structured values remain in JSON.
 Names and log text retain their original characters. JSON data and metric calculations are unchanged.
 

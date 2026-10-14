@@ -75,11 +75,46 @@ func sharePath(a, b Result) bool {
 	return false
 }
 
+// minutes is a result's view values a minute, in minute order, with a lookup by minute.
+type minutes struct {
+	keys   []int64
+	values []float64
+	first  int64     // the minute dense[0] is
+	dense  []float64 // every minute from first on; has says which ones hold a value
+	has    []bool
+}
+
+func (m minutes) at(key int64) (float64, bool) {
+	i := key - m.first
+	if i < 0 || i >= int64(len(m.dense)) || !m.has[i] {
+		return 0, false
+	}
+	return m.dense[i], true
+}
+
 // byMinute is a result's view values keyed by minute.
-func byMinute(r Result) map[int64]float64 {
-	out := make(map[int64]float64, len(r.minutes))
+func byMinute(r Result) minutes {
+	out := minutes{}
+	if len(r.minutes) == 0 {
+		return out
+	}
+	last := r.minutes[0].At.Unix() / 60
+	out.first = last
 	for _, m := range r.minutes {
-		out[m.At.Unix()/60] = m.Value(r.rule)
+		key := m.At.Unix() / 60
+		out.first, last = min(out.first, key), max(last, key)
+	}
+	out.dense = make([]float64, last-out.first+1)
+	out.has = make([]bool, len(out.dense))
+	for _, m := range r.minutes {
+		i := m.At.Unix()/60 - out.first
+		out.dense[i], out.has[i] = m.Value(r.rule), true
+	}
+	for i, ok := range out.has {
+		if ok {
+			out.keys = append(out.keys, out.first+int64(i))
+			out.values = append(out.values, out.dense[i])
+		}
 	}
 	return out
 }
@@ -87,7 +122,7 @@ func byMinute(r Result) map[int64]float64 {
 // bestLag is the strongest correlation between target at t and other at t-lag, over lags of up
 // to relateLag minutes, with the lag it was found at. A tie goes to the smaller lag, so a pair that
 // moved together is not reported as one leading the other.
-func bestLag(target, other map[int64]float64) (float64, int) {
+func bestLag(target, other minutes) (float64, int) {
 	best, at := 0.0, 0
 	try := func(lag int) {
 		r, ok := pearson(target, other, int64(lag))
@@ -107,25 +142,32 @@ func bestLag(target, other map[int64]float64) (float64, int) {
 	return best, at
 }
 
-func pearson(target, other map[int64]float64, lag int64) (float64, bool) {
-	var n, sx, sy, sxx, syy, sxy float64
-	for key, x := range target {
-		y, ok := other[key-lag]
-		if !ok {
-			continue
+// pearson is taken in minute order and about the means: summed raw, a hundred thousand file
+// handles squared loses the variance to rounding, and summed in map order it lost a different part
+// of it on every run, so the lag reported changed from one run to the next.
+func pearson(target, other minutes, lag int64) (float64, bool) {
+	var n, sx, sy float64
+	for i, key := range target.keys {
+		if y, ok := other.at(key - lag); ok {
+			n++
+			sx, sy = sx+target.values[i], sy+y
 		}
-		n++
-		sx, sy = sx+x, sy+y
-		sxx, syy, sxy = sxx+x*x, syy+y*y, sxy+x*y
 	}
 	if n < relateOverlap {
 		return 0, false
 	}
-	vx, vy := sxx-sx*sx/n, syy-sy*sy/n
+	mx, my := sx/n, sy/n
+	var vx, vy, cov float64
+	for i, key := range target.keys {
+		if y, ok := other.at(key - lag); ok {
+			dx, dy := target.values[i]-mx, y-my
+			vx, vy, cov = vx+dx*dx, vy+dy*dy, cov+dx*dy
+		}
+	}
 	if vx <= 0 || vy <= 0 {
 		return 0, false
 	}
-	return (sxy - sx*sy/n) / math.Sqrt(vx*vy), true
+	return cov / math.Sqrt(vx*vy), true
 }
 
 // Imbalance is one label compared across the things that should carry it alike: the disks of one

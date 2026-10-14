@@ -21,7 +21,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # minor goes up for one of those; the patch goes up for a state worth marking on the way to it. What
 # this is not is a counter: 0.3.0 and 0.4.0 were once the same feature twenty-six minutes apart, one
 # of them half-finished, and two numbers for that say less than one does.
-BASELINE="0.9.0"
+BASELINE="0.10.0"
 
 if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
   described="$(git -C "$root" describe --tags --match 'mongo-log-parser/v*' --abbrev=0 2>/dev/null || true)"

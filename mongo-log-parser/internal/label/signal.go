@@ -31,7 +31,7 @@ func Seconds(r Rule, samples *ftdc.Samples, instance string, from, to time.Time)
 	if !ok {
 		return nil
 	}
-	minus, den := map[int64]float64{}, map[int64]float64{}
+	var minus, den []reading
 	if len(r.Signal.Minus) > 0 {
 		if minus, ok = summed(r, samples, r.Signal.Minus, instance, from, to); !ok {
 			return nil
@@ -43,24 +43,33 @@ func Seconds(r Rule, samples *ftdc.Samples, instance string, from, to time.Time)
 		}
 	}
 	out := make([]Second, 0, len(num))
-	for at, n := range num {
+	m, d := 0, 0
+	for _, point := range num {
+		n := point.value
 		if len(r.Signal.Minus) > 0 {
-			m, seen := minus[at]
-			if !seen || (r.Signal.Timestamps && (n == 0 || m == 0)) {
+			for m < len(minus) && minus[m].at < point.at {
+				m++
+			}
+			if m == len(minus) || minus[m].at != point.at {
 				continue
 			}
-			n -= m
+			if r.Signal.Timestamps && (n == 0 || minus[m].value == 0) {
+				continue
+			}
+			n -= minus[m].value
 		}
-		d := 1.0
+		ratio := 1.0
 		if len(r.Signal.Den) > 0 {
-			var seen bool
-			if d, seen = den[at]; !seen {
+			for d < len(den) && den[d].at < point.at {
+				d++
+			}
+			if d == len(den) || den[d].at != point.at {
 				continue
 			}
+			ratio = den[d].value
 		}
-		out = append(out, Second{At: time.UnixMilli(at).UTC(), num: n, den: d, Value: r.Signal.finish(n, d)})
+		out = append(out, Second{At: time.UnixMilli(point.at).UTC(), num: n, den: ratio, Value: r.Signal.finish(n, ratio)})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out
 }
 
@@ -77,31 +86,55 @@ func (s Signal) finish(num, den float64) float64 {
 	return v
 }
 
+// reading is one second of a summed signal, at its epoch millisecond.
+type reading struct {
+	at    int64
+	value float64
+}
+
 // summed reads a list of paths as one value a second: each gauge as it is, each counter as its rate,
 // added together. A second is kept only when every path has a value at it — a sum missing one of its
-// terms is a different number, not a smaller one.
-func summed(r Rule, samples *ftdc.Samples, entries []string, instance string, from, to time.Time) (map[int64]float64, bool) {
-	var out map[int64]float64
-	for _, entry := range entries {
+// terms is a different number, not a smaller one. The result is in time order, one reading a
+// millisecond, the last sample winning where a stream repeats one.
+func summed(r Rule, samples *ftdc.Samples, entries []string, instance string, from, to time.Time) ([]reading, bool) {
+	var out []reading
+	for i, entry := range entries {
 		p, ok := resolve(entry, instance, samples)
 		if !ok {
 			return nil, false
 		}
-		these := map[int64]float64{}
-		for _, point := range metrics.Points(samples, p, r.Signal.Mode, from, to) {
-			these[point.At.UnixMilli()] = point.Value
+		points := metrics.Points(samples, p, r.Signal.Mode, from, to)
+		these := make([]reading, len(points))
+		sorted := true
+		for j, point := range points {
+			these[j] = reading{point.At.UnixMilli(), point.Value}
+			sorted = sorted && (j == 0 || these[j-1].at < these[j].at)
 		}
-		if out == nil {
+		if !sorted {
+			sort.SliceStable(these, func(a, b int) bool { return these[a].at < these[b].at })
+			unique := these[:0]
+			for j, point := range these {
+				if j+1 < len(these) && these[j+1].at == point.at {
+					continue
+				}
+				unique = append(unique, point)
+			}
+			these = unique
+		}
+		if i == 0 {
 			out = these
 			continue
 		}
-		for at, v := range out {
-			if add, seen := these[at]; seen {
-				out[at] = v + add
-			} else {
-				delete(out, at)
+		kept, k := out[:0], 0
+		for _, point := range out {
+			for k < len(these) && these[k].at < point.at {
+				k++
+			}
+			if k < len(these) && these[k].at == point.at {
+				kept = append(kept, reading{point.at, point.value + these[k].value})
 			}
 		}
+		out = kept
 	}
 	return out, out != nil
 }

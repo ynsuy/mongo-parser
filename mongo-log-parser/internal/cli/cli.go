@@ -13,7 +13,9 @@ import (
 
 	"golang.org/x/term"
 
+	"mongo-log-parser/internal/guard"
 	"mongo-log-parser/internal/ingest"
+	"mongo-log-parser/internal/mcpserver"
 	"mongo-log-parser/internal/store"
 )
 
@@ -51,6 +53,8 @@ commands:
               the labels it pairs with and the node's log in the same window
   labels      the rule book: every label, what it is computed from, what it is read on, its bands
   version     which build this is, and when it was built
+  mcp         serve these commands as MCP tools over stdio, for Claude Code, Codex or any MCP client
+  hook        the PreToolUse hook that keeps an agent reading bundles through the parser
 
 The path may be written anywhere among the arguments, so the order never matters:
 
@@ -119,6 +123,17 @@ func Run(argv []string) int {
 	if len(argv) == 0 {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
+	}
+	// An agent's host starts these with no bundle: the bundle arrives with each request.
+	switch argv[0] {
+	case "mcp":
+		if err := mcpserver.Run(Release()); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	case "hook":
+		return guard.Run(os.Stdin, os.Stdout, os.Stderr)
 	}
 	for _, word := range argv {
 		switch word {
@@ -251,6 +266,7 @@ func openStore(root string, refresh bool) (*store.Store, error) {
 			return nil, err
 		}
 		if ok {
+			store.Remember(dir, root)
 			return st, nil
 		}
 	}
@@ -268,6 +284,7 @@ func openStore(root string, refresh bool) (*store.Store, error) {
 	if !ok {
 		return nil, fmt.Errorf("the store at %s was not completed", dir)
 	}
+	store.Remember(dir, root)
 	return st, nil
 }
 

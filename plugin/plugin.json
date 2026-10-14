@@ -1,0 +1,8 @@
+{
+  "name": "mongo-diagnoser",
+  "version": "0.10.0",
+  "description": "Investigate offline MongoDB support bundles (logs, FTDC, shell printouts) through mongo-log-parser: MCP tools, an investigation skill, and a hook that keeps raw bundle reads behind the user's say-so.",
+  "author": { "name": "Yunus Uyanik", "email": "yunus.uyanik@percona.com" },
+  "repository": "https://github.com/ynsuy/pidba",
+  "keywords": ["mongodb", "ftdc", "logs", "support-bundle", "diagnostics"]
+}

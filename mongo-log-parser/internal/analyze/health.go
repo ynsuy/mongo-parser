@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"mongo-log-parser/internal/store"
 )
 
 // A log says most of what it knows in lines nobody reads: a thousand authentication failures, a
@@ -134,10 +136,13 @@ type errorAttributes struct {
 type Health struct {
 	signals map[string]*Signal
 	decided map[string]int // message text -> index into rules, or -1 for no rule
+	// errors is the same for the error text of a line whose message named nothing: a stream of
+	// warnings repeats a handful of them millions of times.
+	errors map[string]int
 }
 
 func NewHealth() *Health {
-	return &Health{signals: map[string]*Signal{}, decided: map[string]int{}}
+	return &Health{signals: map[string]*Signal{}, decided: map[string]int{}, errors: map[string]int{}}
 }
 
 // Add counts one record against the condition its message names, if any.
@@ -155,7 +160,13 @@ func (h *Health) Add(record Record) {
 		switch record.Sev {
 		case "F", "E", "W":
 			text = errorText(record)
-			index = matchRule(text)
+			var seen bool
+			if index, seen = h.errors[text]; !seen {
+				index = matchRule(text)
+				if len(h.errors) < 10000 {
+					h.errors[text] = index
+				}
+			}
 			basis = "error_attributes"
 		default:
 			return
@@ -230,6 +241,26 @@ func (h *Health) count(template Signal, record Record, basis string, describe fu
 
 // errorText is the lowercased reason a line gives for failing, or "" when it gives none.
 func errorText(record Record) string {
+	attr := record.Attr()
+	if len(attr) == 0 {
+		return ""
+	}
+	// Three fields out of what can be a very long line: found without decoding the rest of it,
+	// and decoded the slow way only when the line is not plain JSON this can walk.
+	values, ok := store.Fields(string(attr), "error", "reason", "status")
+	if !ok {
+		return errorTextDecoded(record)
+	}
+	parts := make([]string, 0, 3)
+	for _, value := range values {
+		if value != "" {
+			parts = append(parts, value)
+		}
+	}
+	return strings.ToLower(strings.Join(parts, " "))
+}
+
+func errorTextDecoded(record Record) string {
 	var attributes errorAttributes
 	if !record.DecodeAttributes(&attributes) {
 		return ""

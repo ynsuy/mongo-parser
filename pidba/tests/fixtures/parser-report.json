@@ -305,6 +305,11 @@
           "source": "node-a"
         },
         {
+          "label": "files.handles",
+          "reason": "not in this node's FTDC: systemMetrics/files/sys_file_handles_in_use",
+          "source": "node-a"
+        },
+        {
           "label": "tickets.read.used",
           "reason": "not in this node's FTDC: serverStatus/wiredTiger/concurrentTransactions/read/out",
           "source": "node-a"
@@ -2098,6 +2103,56 @@
         },
         "title": "mongod network traffic",
         "unit": "MB/s",
+        "version_text": "all versions",
+        "view": "mean"
+      },
+      {
+        "bands": "normal ≤15000 (fading to 30000) · many 30000–60000 (edges 15000, 90000) · very_high ≥90000 (from 60000)",
+        "doc": "File handles allocated on the whole machine, every process together. FTDC does not record the kernel's limit (fs.file-max), so the bands are fixed reference counts, not a share of this host's limit; when the limit is reached the kernel refuses new files and sockets to every process. A climb that never comes back down is worth reading beside connections.",
+        "elevated": 60000,
+        "formula": "systemMetrics/files/sys_file_handles_in_use, in handles, at each available sample",
+        "levels": [
+          {
+            "down": [
+              15000,
+              30000
+            ],
+            "name": "normal"
+          },
+          {
+            "band": [
+              15000,
+              30000,
+              60000,
+              90000
+            ],
+            "name": "many"
+          },
+          {
+            "name": "very_high",
+            "up": [
+              60000,
+              90000
+            ]
+          }
+        ],
+        "min_change": 2000,
+        "name": "files.handles",
+        "pack": "files",
+        "pairs_with": [
+          "connections.current"
+        ],
+        "reading": "each minute's mean",
+        "signal": {
+          "mode": "gauge",
+          "num": [
+            "systemMetrics/files/sys_file_handles_in_use"
+          ],
+          "scale": 1,
+          "unit": "handles"
+        },
+        "title": "File handles in use",
+        "unit": "handles",
         "version_text": "all versions",
         "view": "mean"
       },

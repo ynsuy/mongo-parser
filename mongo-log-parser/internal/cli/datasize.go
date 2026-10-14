@@ -3,7 +3,6 @@ package cli
 import (
 	"sort"
 	"strings"
-	"time"
 
 	"mongo-log-parser/internal/collector"
 	"mongo-log-parser/internal/ftdc"
@@ -130,14 +129,15 @@ func dataSizes(st *store.Store) []DataSize {
 	if err != nil {
 		set = &streamSet{}
 	}
-	var from, to time.Time
 	found := make([]DataSize, 0, 4)
 	for i, stream := range set.streams {
 		name := stream.Host()
 		if name == "" && i < len(set.sources) {
 			name = set.sources[i]
 		}
-		samples, err := stream.Read(from, to, sizeSelector, nil)
+		// The newest reading is the answer, and the last hour or so of chunks holds it: decoding a
+		// week of them to find it cost as much as the labels.
+		samples, err := stream.ReadLast(sizeChunks, sizeSelector)
 		if err != nil || samples == nil {
 			continue
 		}
@@ -154,7 +154,10 @@ func dataSizes(st *store.Store) []DataSize {
 			return found[i].Kind < found[j].Kind
 		}
 		// Biggest mount first: the one holding the data is the one worth reading.
-		return found[i].MountUsed > found[j].MountUsed
+		if found[i].MountUsed != found[j].MountUsed {
+			return found[i].MountUsed > found[j].MountUsed
+		}
+		return found[i].Mount < found[j].Mount
 	})
 	// And last, a collector's own report of the filesystems, which is how a bundle from before 8.0
 	// has them at all. Only where the diagnostic data did not already say it, first-hand.
@@ -163,6 +166,9 @@ func dataSizes(st *store.Store) []DataSize {
 	}
 	return found
 }
+
+// sizeChunks is how many of a stream's newest chunks the sizes are read from.
+const sizeChunks = 12
 
 // sizeSelector keeps only the columns these figures come from.
 func sizeSelector(path string) bool {

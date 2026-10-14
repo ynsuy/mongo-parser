@@ -199,7 +199,9 @@ func Open(dir, fingerprint string) (*Store, bool, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, false, nil
 	}
-	db, err := open(path + "?mode=ro")
+	// A reader takes its shared lock once and keeps it. Left to SQLite's default, every block a
+	// scan opened took and dropped the file lock again, and that was a third of reading the log.
+	db, err := open(path + "?mode=ro&_pragma=locking_mode(EXCLUSIVE)")
 	if err != nil {
 		return nil, false, err
 	}

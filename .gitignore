@@ -1,6 +1,7 @@
 # Built binaries: stamped by mongo-log-parser/scripts/build.sh, and rebuilt by pidba's launcher on
 # every start.
 bin/
+!plugin/bin/
 node_modules/
 
 # Model provider credentials and local agent state. Never commit these.

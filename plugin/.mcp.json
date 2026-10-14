@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mongo": {
+      "command": "sh",
+      "args": ["-c", "r=${CLAUDE_PLUGIN_ROOT}; [ -n \"$r\" ] || r=.; exec \"$r/bin/mongo-log-parser\" mcp"],
+      "cwd": "."
+    }
+  }
+}

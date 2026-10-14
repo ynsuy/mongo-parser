@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -98,6 +99,31 @@ func dirBytes(dir string) int64 {
 		return nil
 	})
 	return total
+}
+
+// bundleFile names the bundle a store was built from in plain text, so a hook deciding whether a
+// path is a bundle can list them without opening every store.
+const bundleFile = "bundle"
+
+// Remember records which bundle the store at dir answers for.
+func Remember(dir, root string) {
+	path := filepath.Join(dir, bundleFile)
+	if old, err := os.ReadFile(path); err == nil && string(old) == root {
+		return
+	}
+	_ = os.WriteFile(path, []byte(root), 0o644)
+}
+
+// Bundles is every bundle this machine has a store for.
+func Bundles() []string {
+	dirs, _ := filepath.Glob(filepath.Join(CacheRoot(), "*", bundleFile))
+	out := make([]string, 0, len(dirs))
+	for _, path := range dirs {
+		if root, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(root)) != "" {
+			out = append(out, strings.TrimSpace(string(root)))
+		}
+	}
+	return out
 }
 
 // Remove deletes one store.

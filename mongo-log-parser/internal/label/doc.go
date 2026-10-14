@@ -26,6 +26,5 @@
 // # Fuzzy bands
 //
 // A value near the edge of two bands belongs to both, by degree, so 89% is mostly "high" and a
-// little "very_high" rather than flipping between them on one point. The idea, and the shape of
-// the rule files, come from github.com/imp3142/ash, written for MySQL.
+// little "very_high" rather than flipping between them on one point.
 package label

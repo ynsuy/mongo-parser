@@ -6,6 +6,8 @@ metric of every node did to the seconds and log lines behind the one that matter
 
 ```text
 mongo-log-parser/   the Go tool that does all the reading: labels, the funnel, the log analysis
+plugin/             mongo-diagnoser, the Claude Code and Codex plugin: the parser's MCP tools, the
+                    investigation skill, and a hook that keeps raw bundle reads behind the user
 pidba/              a Pi terminal agent that drives the tool with no shell of its own
 docs/               labels-review.xlsx, every label rule laid out for review
 ```
@@ -27,24 +29,39 @@ cannot be established; neither an isolated maximum nor a dominant logged wait es
 
 ## Install and run
 
-Requires Git, Bash and Go 1.26+ (macOS, Linux or WSL). PIDBA also needs Node.js 22.19.0+ and npm.
+**Claude Code or Codex plugin** (no Go, Node or clone needed; the plugin downloads the parser
+release it was published with on first use, into `~/.cache/mongo-diagnoser`):
+
+```bash
+# Claude Code
+claude plugin marketplace add ynsuy/pidba
+claude plugin install mongo-diagnoser@psb-mongo
+
+# Codex
+codex plugin marketplace add ynsuy/pidba
+codex plugin add mongo-diagnoser@psb-mongo
+```
+
+Then ask about a bundle by its path: `Investigate why queries slowed down in ~/cases/CS123`. In
+Claude Code, `/mongo-diagnoser:investigate` starts the same skill explicitly. Codex runs plugin
+hooks only after you trust them in `/hooks`.
+
+The hook stops file and shell tools from reading a bundle directly, so every figure comes from
+the parser. Claude Code asks you first; Codex cannot ask from a hook, so it refuses, and
+`MONGO_LOG_PARSER_RAW_READS=1` in the environment allows raw reads for that session.
+
+**PIDBA** (requires Git, Bash, Go 1.26+, Node.js 22.19.0+ and npm; builds the parser automatically):
 
 ```bash
 git clone https://github.com/ynsuy/pidba.git
 cd pidba
-```
-
-**PIDBA** (builds the parser automatically):
-
-```bash
 npm --prefix pidba ci
 ./pidba/scripts/pidba
 ```
 
 On first use: `/login` → **OpenAI Codex** → sign in. Then describe the problem with your bundle path.
-PIDBA sends your messages and structured results to the selected model without masking.
 
-**Parser only** (local, no model account needed):
+**Parser only** (Go 1.26+, local, no model account needed):
 
 ```bash
 ./mongo-log-parser/scripts/build.sh
@@ -66,6 +83,23 @@ python3 -m venv /tmp/pidba-labels-venv
 /tmp/pidba-labels-venv/bin/python mongo-log-parser/scripts/labels-review.py
 ```
 
+To profile one command, `MONGO_LOG_PARSER_PROFILE=/tmp/prof mongo-log-parser/bin/mongo-log-parser
+report /path/to/bundle` writes `cpu.pprof` and `heap.pprof` there for `go tool pprof`.
+
 The last test checks that every rule reads FTDC paths a real capture carries; run it against a
 capture of each server version a rule changes for. The parser is versioned by tags named
 `mongo-log-parser/vX.Y.Z`; pidba by its `package.json`.
+
+To try the plugin against a local parser build, point the launcher at it (Claude Code passes the
+environment to MCP servers; Codex does not, so copy the build to
+`~/.cache/mongo-diagnoser/mongo-log-parser-vX.Y.Z` instead):
+
+```bash
+MONGO_LOG_PARSER_BIN="$PWD/mongo-log-parser/bin/mongo-log-parser" claude --plugin-dir ./plugin
+```
+
+A release is the version in `plugin/.claude-plugin/plugin.json` and `plugin/plugin.json`, the
+`BASELINE` in `mongo-log-parser/scripts/version.sh`, and the tag `mongo-log-parser/vX.Y.Z`, all the
+same. Pushing the tag runs `.github/workflows/release-parser.yml`, which tests, builds the four
+binaries the plugin downloads (macOS and Linux, arm64 and amd64) with their checksums, and refuses
+a tag the plugin manifest does not name.
