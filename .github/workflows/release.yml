@@ -1,0 +1,36 @@
+# A vX.Y.Z tag publishes the binaries the psb-mongo-diagnoser plugin downloads.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test ./...
+      - name: check the baseline names this release
+        run: test "v$(sed -n 's/^BASELINE="\(.*\)"/\1/p' scripts/version.sh)" = "$GITHUB_REF_NAME"
+      - name: build
+        run: |
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 \
+              scripts/build.sh "$PWD/dist/mongo-parser_${target%/*}_${target#*/}"
+          done
+          (cd dist && sha256sum mongo-parser_* > checksums.txt)
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

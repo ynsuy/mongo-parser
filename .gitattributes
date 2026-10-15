@@ -1,2 +1,2 @@
 # Chart snapshots retain trailing spaces to verify plot widths.
-mongo-log-parser/internal/render/testdata/report.txt whitespace=-blank-at-eol
+internal/render/testdata/report.txt whitespace=-blank-at-eol
