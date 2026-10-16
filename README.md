@@ -105,6 +105,16 @@ bundle — one this machine has a store for, or a path shaped like one (`diagnos
 `mongod*.log*`) — is put to the user. A Bash command that only runs `mongo-parser` passes.
 `MONGO_PARSER_RAW_READS=1` lets everything through.
 
+## The cache
+
+A bundle is read once into a store under the user cache (`~/Library/Caches/mongo-parser` on macOS,
+`~/.cache/mongo-parser` on Linux, or `MONGO_PARSER_CACHE`), and every later question answers from
+it. A store runs to roughly half the bundle's size on disk, so after every new read the parser
+removes the stores nobody has used for 14 days (`MONGO_PARSER_KEEP_DAYS`), those whose bundle is no
+longer on the disk, and then the least recently used until the cache fits in 20 GiB
+(`MONGO_PARSER_CACHE_GB`). `0` turns either off. The store just read and any used in the last hour
+are kept. `mongo-parser prune` lists the stores and removes them on request.
+
 ## Versions
 
 `scripts/build.sh` stamps the binary with `scripts/version.sh`: the nearest `vX.Y.Z` tag, or the

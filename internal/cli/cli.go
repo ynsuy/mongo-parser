@@ -285,7 +285,22 @@ func openStore(root string, refresh bool) (*store.Store, error) {
 		return nil, fmt.Errorf("the store at %s was not completed", dir)
 	}
 	store.Remember(dir, root)
+	tidy(dir)
 	return st, nil
+}
+
+// tidy is best effort: a cache that could not be cleared is no reason to fail the answer.
+func tidy(keep string) {
+	removed, _ := store.Tidy(keep)
+	if len(removed) == 0 || !term.IsTerminal(int(os.Stderr.Fd())) {
+		return
+	}
+	var freed int64
+	for _, item := range removed {
+		freed += item.Bytes
+	}
+	fmt.Fprintf(os.Stderr, "removed %d old stores from the cache (%s); mongo-parser prune lists the rest\n",
+		len(removed), bytesText(freed))
 }
 
 func runIngest(root string, args []string) error {
