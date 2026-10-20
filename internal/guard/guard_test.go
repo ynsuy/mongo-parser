@@ -4,32 +4,50 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/ynsuy/mongo-parser/internal/store"
 )
 
 func TestTouches(t *testing.T) {
-	bundles := []string{"/cases/CS1"}
+	bundles := []store.Bundle{
+		{Root: "/cases/CS1", Files: []string{"/cases/CS1/node1/a.log", "/cases/CS1/node1/b c.log", "/cases/CS1/logs.tar.gz"}},
+		{Root: "/cases/CS2"},
+	}
 	cases := []struct {
 		tool, path, command, cwd, want string
 	}{
-		{tool: "Read", path: "/cases/CS1/node1/mongod.log", cwd: "/work", want: "/cases/CS1"},
+		{tool: "Read", path: "/cases/CS1/node1/a.log", cwd: "/work", want: "/cases/CS1"},
+		{tool: "Read", path: "node1/a.log", cwd: "/cases/CS1", want: "/cases/CS1"},
+		{tool: "Read", path: "/cases/CS1/notes.md", cwd: "/cases/CS1", want: ""},
+		{tool: "Read", path: "/cases/CS1/node1/mongod.log", cwd: "/work", want: "mongod.log"},
+		{tool: "Read", path: "/cases/CS2/anything", cwd: "/work", want: "/cases/CS2"},
 		{tool: "Read", path: "/work/main.go", cwd: "/work", want: ""},
 		{tool: "Grep", cwd: "/cases/CS1", want: "/cases/CS1"},
-		{tool: "Glob", path: "CS1/x", cwd: "/cases", want: "/cases/CS1"},
-		{tool: "Bash", command: "grep -c ERROR /cases/CS1/a.log", cwd: "/work", want: "/cases/CS1"},
-		{tool: "Bash", command: "ls", cwd: "/cases/CS1/sub", want: "/cases/CS1"},
+		{tool: "Grep", path: "/cases", cwd: "/work", want: "/cases/CS1"},
+		{tool: "Grep", path: "/cases/CS1/notes", cwd: "/work", want: ""},
+		{tool: "Glob", path: "/cases/CS1", cwd: "/cases/CS1", want: ""},
+		{tool: "Bash", command: "ls", cwd: "/cases/CS1/node1", want: ""},
+		{tool: "Bash", command: "git status && cat notes.md", cwd: "/cases/CS1", want: ""},
+		{tool: "Bash", command: "grep -c ERROR /cases/CS1/node1/a.log", cwd: "/work", want: "/cases/CS1"},
+		{tool: "Bash", command: "tail -n 5 node1/a.log", cwd: "/cases/CS1", want: "/cases/CS1"},
+		{tool: "Bash", command: `head "b c.log"`, cwd: "/cases/CS1/node1", want: "/cases/CS1"},
+		{tool: "Bash", command: "tar -tzf logs.tar.gz | head", cwd: "/cases/CS1", want: "/cases/CS1"},
+		{tool: "Bash", command: "grep -rn timeout .", cwd: "/cases/CS1", want: "/cases/CS1"},
+		{tool: "Bash", command: "rg timeout", cwd: "/cases/CS1", want: "/cases/CS1"},
+		{tool: "Bash", command: "rg timeout", cwd: "/work", want: ""},
 		{tool: "Bash", command: "mongo-parser slow /cases/CS1 --top 5", cwd: "/work", want: ""},
-		{tool: "Bash", command: "mongo-parser slow /cases/CS1 | head; cat /cases/CS1/x", cwd: "/work", want: "/cases/CS1"},
+		{tool: "Bash", command: "mongo-parser slow /cases/CS1 | head; cat /cases/CS1/node1/a.log", cwd: "/work", want: "/cases/CS1"},
 		{tool: "Bash", command: "zcat ~/new/diagnostic.data/metrics.1", cwd: "/work", want: "diagnostic.data"},
 		{tool: "Bash", command: "tail -n 50 logs/mongod.log.2", cwd: "/work", want: "mongod.log.2"},
 		{tool: "Bash", command: "go test ./...", cwd: "/work", want: ""},
 		{tool: "Write", path: "/cases/CS1/notes.md", cwd: "/work", want: ""},
 	}
 	for _, c := range cases {
-		got := touches(c.tool, toolInput{FilePath: c.path, Command: c.command}, c.cwd, bundles)
+		in := toolInput{FilePath: c.path, Command: c.command}
 		if c.tool == "Grep" || c.tool == "Glob" {
-			got = touches(c.tool, toolInput{Path: c.path, Command: c.command}, c.cwd, bundles)
+			in = toolInput{Path: c.path}
 		}
-		if got != c.want {
+		if got := touches(c.tool, in, c.cwd, bundles); got != c.want {
 			t.Errorf("%s %q %q in %s: got %q, want %q", c.tool, c.path, c.command, c.cwd, got, c.want)
 		}
 	}

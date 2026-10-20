@@ -80,3 +80,30 @@ func TestTidyRemovesFromTheCache(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRememberListsTheFilesTheParserReads(t *testing.T) {
+	t.Setenv("MONGO_PARSER_CACHE", t.TempDir())
+	root := t.TempDir()
+	st, err := Create(Dir(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for _, row := range [][2]string{
+		{"node1/mongod.log", "log_json"},
+		{"logs.tar.gz!a/mongod.log", "log_json"},
+		{"logs.tar.gz!a/diagnostic.data/metrics.1", "ftdc"},
+		{"notes.md", "other"},
+		{"mysql/error.log", "foreign"},
+	} {
+		if _, err := st.DB.Exec(`INSERT INTO source(path, kind) VALUES (?, ?)`, row[0], row[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	Remember(st, root)
+	got := Bundles()
+	want := []Bundle{{Root: root, Files: []string{filepath.Join(root, "logs.tar.gz"), filepath.Join(root, "node1/mongod.log")}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}

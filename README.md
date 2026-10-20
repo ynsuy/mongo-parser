@@ -100,10 +100,12 @@ claude mcp add mongo -- /path/to/mongo-parser mcp
 or, on the Percona Support team, install the `psb-mongo-diagnoser` plugin from the Percona Support
 Bazaar, which downloads the release binary and also brings the investigation skill and the hook.
 
-`mongo-parser hook` reads a PreToolUse payload. A Read, Grep, Glob or Bash call that touches a
-bundle — one this machine has a store for, or a path shaped like one (`diagnostic.data`,
-`mongod*.log*`) — is put to the user. A Bash command that only runs `mongo-parser` passes.
-`MONGO_PARSER_RAW_READS=1` lets everything through.
+`mongo-parser hook` reads a PreToolUse payload. A Read, Grep or Bash call that would read a file
+the parser read from a bundle on this machine, or a path shaped like one (`diagnostic.data`,
+`mongod*.log*`), is put to the user; so is a recursive search over a directory holding such files.
+Listing names (Glob, `ls`) and other files beside the bundle, such as notes in the case directory,
+pass, and so does a Bash command that only runs `mongo-parser`. `MONGO_PARSER_RAW_READS=1` lets
+everything through.
 
 ## The cache
 

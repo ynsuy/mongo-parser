@@ -106,27 +106,87 @@ func dirBytes(dir string) int64 {
 	return total
 }
 
-// bundleFile names the bundle a store was built from in plain text, so a hook deciding whether a
-// path is a bundle can list them without opening every store.
-const bundleFile = "bundle"
+// bundleFile and sourcesFile name, in plain text, the bundle a store was built from and the files
+// on disk it read, so the hook can check a path on every tool call without opening every store.
+const (
+	bundleFile  = "bundle"
+	sourcesFile = "sources"
+)
 
-// Remember records which bundle the store at dir answers for.
-func Remember(dir, root string) {
+// Remember records which bundle the store answers for and which of its files the parser read.
+func Remember(st *Store, root string) {
+	dir := filepath.Dir(st.Path)
 	path := filepath.Join(dir, bundleFile)
-	if old, err := os.ReadFile(path); err == nil && string(old) == root {
+	if old, err := os.ReadFile(path); err != nil || string(old) != root {
+		_ = os.WriteFile(path, []byte(root), 0o644)
+	}
+	path = filepath.Join(dir, sourcesFile)
+	if _, err := os.Stat(path); err == nil {
 		return
 	}
-	_ = os.WriteFile(path, []byte(root), 0o644)
+	files, err := st.readFiles(root)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0o644)
+}
+
+// readFiles is every file on disk holding something the parser reads: an archive counts once for
+// all its members. Unrecognised files and other databases' files are not read, so not listed.
+func (s *Store) readFiles(root string) ([]string, error) {
+	rows, err := s.DB.Query(`SELECT DISTINCT path FROM source WHERE kind NOT IN ('other', 'foreign')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	info, err := os.Stat(root)
+	single := err == nil && !info.IsDir()
+	seen := map[string]bool{}
+	var out []string
+	for rows.Next() {
+		var rel string
+		if err := rows.Scan(&rel); err != nil {
+			return nil, err
+		}
+		file := root
+		if !single {
+			file = filepath.Join(root, strings.SplitN(rel, "!", 2)[0])
+		}
+		if !seen[file] {
+			seen[file] = true
+			out = append(out, file)
+		}
+	}
+	sort.Strings(out)
+	return out, rows.Err()
+}
+
+// Bundle is one bundle this machine has a store for. Files is nil for a store that has not
+// recorded them, and then the whole of Root counts as the bundle.
+type Bundle struct {
+	Root  string
+	Files []string
 }
 
 // Bundles is every bundle this machine has a store for.
-func Bundles() []string {
+func Bundles() []Bundle {
 	dirs, _ := filepath.Glob(filepath.Join(CacheRoot(), "*", bundleFile))
-	out := make([]string, 0, len(dirs))
+	out := make([]Bundle, 0, len(dirs))
 	for _, path := range dirs {
-		if root, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(root)) != "" {
-			out = append(out, strings.TrimSpace(string(root)))
+		root, err := os.ReadFile(path)
+		if err != nil || strings.TrimSpace(string(root)) == "" {
+			continue
 		}
+		b := Bundle{Root: strings.TrimSpace(string(root))}
+		if files, err := os.ReadFile(filepath.Join(filepath.Dir(path), sourcesFile)); err == nil {
+			b.Files = []string{}
+			for _, file := range strings.Split(string(files), "\n") {
+				if file != "" {
+					b.Files = append(b.Files, file)
+				}
+			}
+		}
+		out = append(out, b)
 	}
 	return out
 }

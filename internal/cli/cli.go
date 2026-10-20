@@ -266,7 +266,7 @@ func openStore(root string, refresh bool) (*store.Store, error) {
 			return nil, err
 		}
 		if ok {
-			store.Remember(dir, root)
+			store.Remember(st, root)
 			return st, nil
 		}
 	}
@@ -284,7 +284,7 @@ func openStore(root string, refresh bool) (*store.Store, error) {
 	if !ok {
 		return nil, fmt.Errorf("the store at %s was not completed", dir)
 	}
-	store.Remember(dir, root)
+	store.Remember(st, root)
 	tidy(dir)
 	return st, nil
 }
