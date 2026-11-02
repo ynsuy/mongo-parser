@@ -26,8 +26,15 @@ type coverageData struct {
 	Unread     []inputCount `json:"not_read"`
 	Point      []inputCount `json:"point_in_time_outputs"`
 	Copies     int          `json:"copies_read_once"`
-	// System is how many events of each kind the operating system's logs held.
-	System map[string]int `json:"os_events,omitempty"`
+	// System is how many events of each kind the operating system's logs held, and when: first and
+	// last say whether they belong to the window at all, so a reader never has to take that on faith.
+	System map[string]eventTally `json:"os_events,omitempty"`
+}
+
+type eventTally struct {
+	Count int    `json:"count"`
+	First string `json:"first"`
+	Last  string `json:"last"`
 }
 
 type inputCount struct {
@@ -38,21 +45,21 @@ type inputCount struct {
 }
 
 type nodeCover struct {
-	ID       int64          `json:"id"`
-	Label    string         `json:"label"`
-	Name     string         `json:"name"`
-	ReplSet  string         `json:"replica_set,omitempty"`
-	Role     string         `json:"role,omitempty"`
-	Version  string         `json:"version,omitempty"`
-	Evidence string         `json:"identified_by"`
-	Aliases  []string       `json:"aliases,omitempty"`
-	LogFirst string         `json:"log_first,omitempty"`
-	LogLast  string         `json:"log_last,omitempty"`
-	Lines    int            `json:"lines"`
-	Streams  int            `json:"log_files"`
-	Starts   int            `json:"startups_logged"`
-	FTDC     []ftdcCover    `json:"ftdc,omitempty"`
-	System   map[string]int `json:"os_events,omitempty"`
+	ID       int64                 `json:"id"`
+	Label    string                `json:"label"`
+	Name     string                `json:"name"`
+	ReplSet  string                `json:"replica_set,omitempty"`
+	Role     string                `json:"role,omitempty"`
+	Version  string                `json:"version,omitempty"`
+	Evidence string                `json:"identified_by"`
+	Aliases  []string              `json:"aliases,omitempty"`
+	LogFirst string                `json:"log_first,omitempty"`
+	LogLast  string                `json:"log_last,omitempty"`
+	Lines    int                   `json:"lines"`
+	Streams  int                   `json:"log_files"`
+	Starts   int                   `json:"startups_logged"`
+	FTDC     []ftdcCover           `json:"ftdc,omitempty"`
+	System   map[string]eventTally `json:"os_events,omitempty"`
 	logFirst int64
 	logLast  int64
 }
@@ -185,30 +192,53 @@ func buildCoverage(st *store.Store) (*coverageData, error) {
 		}
 	}
 	rows.Close()
-	rows, err = db.Query(`SELECT coalesce(node, 0), kind, count(*) FROM os_event GROUP BY 1, 2`)
+	rows, err = db.Query(`SELECT coalesce(node, 0), kind, count(*), min(ts), max(ts) FROM os_event GROUP BY 1, 2`)
 	if err != nil {
 		return nil, err
 	}
+	// A node's count for one kind comes from exactly this one row (the query already grouped by
+	// node and kind); the bundle-wide total adds that row's count and widens its own first/last,
+	// kept in milliseconds here and only formatted once every row is in.
+	type span64 struct {
+		count  int
+		lo, hi int64
+	}
+	totals := map[string]*span64{}
 	for rows.Next() {
 		var id int64
 		var kind string
 		var count int
-		if err := rows.Scan(&id, &kind, &count); err != nil {
+		var lo, hi int64
+		if err := rows.Scan(&id, &kind, &count, &lo, &hi); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if data.System == nil {
-			data.System = map[string]int{}
-		}
-		data.System[kind] += count
 		if n := nodes[id]; n != nil {
 			if n.System == nil {
-				n.System = map[string]int{}
+				n.System = map[string]eventTally{}
 			}
-			n.System[kind] += count
+			n.System[kind] = eventTally{Count: count, First: fmtTS(lo), Last: fmtTS(hi)}
+		}
+		t := totals[kind]
+		if t == nil {
+			t = &span64{lo: lo, hi: hi}
+			totals[kind] = t
+		}
+		t.count += count
+		if lo < t.lo {
+			t.lo = lo
+		}
+		if hi > t.hi {
+			t.hi = hi
 		}
 	}
 	rows.Close()
+	if len(totals) > 0 {
+		data.System = map[string]eventTally{}
+		for kind, t := range totals {
+			data.System[kind] = eventTally{Count: t.count, First: fmtTS(t.lo), Last: fmtTS(t.hi)}
+		}
+	}
 	for _, id := range order {
 		data.Nodes = append(data.Nodes, *nodes[id])
 	}
@@ -788,21 +818,28 @@ func renderCoverage(root string, d *coverageData) string {
 	return b.String()
 }
 
-// eventCounts lists event kinds with their counts, most frequent first.
-func eventCounts(counts map[string]int) string {
+// eventCounts lists event kinds with their counts and when they happened, most frequent first — the
+// time span is what lets a reader see a boot or a hung task left over from weeks before the bundle's
+// window without having to ask for it separately.
+func eventCounts(counts map[string]eventTally) string {
 	kinds := make([]string, 0, len(counts))
 	for kind := range counts {
 		kinds = append(kinds, kind)
 	}
 	sort.Slice(kinds, func(i, j int) bool {
-		if counts[kinds[i]] != counts[kinds[j]] {
-			return counts[kinds[i]] > counts[kinds[j]]
+		if counts[kinds[i]].Count != counts[kinds[j]].Count {
+			return counts[kinds[i]].Count > counts[kinds[j]].Count
 		}
 		return kinds[i] < kinds[j]
 	})
 	parts := make([]string, len(kinds))
 	for i, kind := range kinds {
-		parts[i] = fmt.Sprintf("%s %d", strings.ReplaceAll(kind, "_", " "), counts[kind])
+		t := counts[kind]
+		when := t.First[:16]
+		if t.Last[:16] != t.First[:16] {
+			when += " → " + t.Last[:16]
+		}
+		parts[i] = fmt.Sprintf("%s %d (%s)", strings.ReplaceAll(kind, "_", " "), t.Count, when)
 	}
 	return strings.Join(parts, ", ")
 }
