@@ -22,4 +22,3 @@ rules:
       - {name: very_high, up: [60000, 90000]}
     elevated: 60000
     min_change: 2000
-    pairs_with: [connections.current]

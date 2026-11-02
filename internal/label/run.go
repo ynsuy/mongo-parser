@@ -52,8 +52,6 @@ type Result struct {
 	// Periodic is set when the excursions came back at a regular interval: a job, not an accident.
 	Periodic *Periodic `json:"periodic,omitempty"`
 	Duty     *Duty     `json:"duty,omitempty"`
-	// Related is the other labels on the same node that moved with this one, strongest first.
-	Related []Related `json:"related,omitempty"`
 
 	rule    Rule
 	minutes []Minute

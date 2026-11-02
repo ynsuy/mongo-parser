@@ -1,0 +1,26 @@
+pack: saturation
+description: >-
+  A resource busy and slow, or busy and queued, at the same time: the signature of that resource
+  being the bottleneck rather than one of its symptoms being read alone.
+
+classifiers:
+
+  - name: io_saturation
+    title: "I/O saturation"
+    doc: >-
+      The disk is busy and the requests on it are slow at the same time, with CPU time going to
+      I/O wait rather than idle — the combination a storage bottleneck leaves, not what a single
+      one of these labels on its own would say.
+    when:
+      - {label: disk.busy, at_least: high}
+      - {label: disk.await, at_least: slow}
+      - {label: cpu.iowait, at_least: elevated}
+
+  - name: cpu_saturation
+    title: "CPU saturation"
+    doc: >-
+      The CPU is busy and threads are queued waiting for a core at the same time: more runnable
+      work than the machine has cores for, not an I/O or memory wait showing up as CPU time.
+    when:
+      - {label: cpu.busy, at_least: high}
+      - {label: cpu.run_queue, at_least: busy}

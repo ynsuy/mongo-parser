@@ -1,0 +1,16 @@
+pack: replication
+description: >-
+  A member that has fallen behind together with flow control actually holding writers back for it,
+  not just a lag number that never got far enough to matter.
+
+classifiers:
+
+  - name: replication_lag
+    title: "Replication lag with flow control engaged"
+    doc: >-
+      A member is behind and flow control is lagged at the same time — the combination that shows
+      up as writes slowing down on the primary for a reason that is not the primary's own disk or
+      CPU, but a secondary it is pacing itself to.
+    when:
+      - {label: repl.member_lag, at_least: behind}
+      - {label: flow.lagged, at_least: some}

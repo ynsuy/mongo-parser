@@ -22,7 +22,6 @@ rules:
       - {name: above_reference, up: [94, 96]}
     elevated: 95
     min_change: 5
-    pairs_with: [cache.fill_above_95, cache.app_eviction, cache.read_in]
 
   - name: cache.fill_above_95
     title: "Cache-fill samples above 95%"
@@ -45,7 +44,6 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [cache.fill, cache.app_eviction, tickets.read.scarce]
 
   - name: cache.dirty
     title: "WiredTiger dirty cache"
@@ -65,7 +63,6 @@ rules:
       - {name: above_reference, up: [19, 21]}
     elevated: 20
     min_change: 3
-    pairs_with: [cache.dirty_above_20, checkpoint.duration, disk.write_await, ops.writes]
 
   - name: cache.dirty_above_20
     title: "Dirty-cache samples above 20%"
@@ -84,7 +81,6 @@ rules:
     levels: *time_levels
     elevated: 1
     min_change: 3
-    pairs_with: [cache.dirty, checkpoint.running, tickets.write.scarce]
 
   # WiredTiger stopped reporting pages evicted by application threads between 8.0.12 (which has it)
   # and 8.0.16 (which reports attempts and failures instead); both checked against real captures.
@@ -104,7 +100,6 @@ rules:
       - {name: heavy, up: [10, 50]}
     elevated: 1
     min_change: 5
-    pairs_with: [cache.fill_above_95, cache.dirty_above_20]
 
   - name: cache.app_eviction
     title: "Eviction by application threads"
@@ -120,7 +115,6 @@ rules:
     levels: *app_eviction_levels
     elevated: 1
     min_change: 5
-    pairs_with: [cache.fill_above_95, cache.dirty_above_20, cache.app_eviction_time]
 
   - name: cache.app_eviction_time
     title: "Time operations spent evicting"
@@ -139,7 +133,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [cache.app_eviction, cache.fill_above_95, cache.dirty_above_20]
 
   - name: cache.read_in
     title: "Data read into the cache"
@@ -151,7 +144,6 @@ rules:
       scale: 0.000001
       num: ["serverStatus/wiredTiger/cache/bytes read into cache"]
     min_change: 5
-    pairs_with: [disk.read_await, query.collscans, cache.fill]
 
   # WiredTiger moved its checkpoint statistics out of the transaction section in 7.1.
   - name: checkpoint.duration
@@ -173,7 +165,6 @@ rules:
       - {name: back_to_back, up: [50, 60]}
     elevated: 60
     min_change: 10
-    pairs_with: [checkpoint.running, cache.dirty, disk.write_await]
 
   - name: checkpoint.duration
     title: "Checkpoint duration"
@@ -191,7 +182,6 @@ rules:
     levels: *checkpoint_levels
     elevated: 60
     min_change: 10
-    pairs_with: [checkpoint.running, cache.dirty, disk.write_await]
 
   - name: checkpoint.running
     title: "Samples with checkpoint activity"
@@ -211,7 +201,6 @@ rules:
       - {name: continuous, up: [48, 57]}
     elevated: 48
     min_change: 9
-    pairs_with: [checkpoint.duration, disk.busy_above_95, cache.dirty]
 
   - name: checkpoint.running
     title: "Samples with checkpoint activity"
@@ -230,7 +219,6 @@ rules:
     levels: *checkpoint_time_levels
     elevated: 48
     min_change: 9
-    pairs_with: [checkpoint.duration, disk.busy_above_95, cache.dirty]
 
   - name: storage.open_handles
     title: "Open data handles"

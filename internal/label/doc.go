@@ -4,9 +4,9 @@
 //
 // The labels are where an investigation starts. They are read across every node first, the ones
 // that were not ordinary are picked out, and only then is one of them opened up second by second
-// beside the labels that moved with it and the log lines of the same minutes. Everything after the
-// first step follows where a label pointed, so a label that is wrong sends the whole investigation
-// the wrong way. That is why each rule says exactly what it measures, from which FTDC paths, and
+// beside the log lines of the same minutes. Everything after the first step follows where a label
+// pointed, so a label that is wrong sends the whole investigation the wrong way. That is why each
+// rule says exactly what it measures, from which FTDC paths, and
 // which summary of the minute its bands are read against.
 //
 // A label describes and does not diagnose. "Read tickets: below 10% of the pool for 100 seconds,

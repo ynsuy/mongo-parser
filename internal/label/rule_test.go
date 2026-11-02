@@ -72,9 +72,6 @@ func TestMalformedRulesAreRefused(t *testing.T) {
 	if err := base().validate(); err != nil {
 		t.Errorf("the base rule is valid: %v", err)
 	}
-	if err := checkPairs([]Rule{{Name: "a", PairsWith: []string{"b"}}}); err == nil {
-		t.Error("a pairing with a label that does not exist was accepted")
-	}
 }
 
 func TestWantsCoversInstancesAndAlternatives(t *testing.T) {

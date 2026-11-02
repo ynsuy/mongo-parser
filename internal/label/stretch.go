@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// A label is opened up second by second: exactly when it went past its mark and came back, how long
-// each stretch lasted, and what the labels it pairs with did inside those same seconds. The minutes
-// say where to look; the seconds say what happened there.
+// A label is opened up second by second: exactly when it went past its mark and came back, and how
+// long each stretch lasted. The minutes say where to look; the seconds say what happened there.
 
 // Marked reports whether one second counts towards a stretch: past the threshold for a time view,
 // at or past the elevated mark for any other label that has one. A shape-only label has no mark,
@@ -76,7 +75,7 @@ func Stretches(r Rule, seconds []Second, gap time.Duration) []Stretch {
 
 // Window is what a label did inside one stretch of time, in its own terms: the level over the
 // window, its extreme seconds, and for a time view how many of those seconds were past the
-// threshold. It is how a paired label is read beside the one being opened up.
+// threshold.
 type Window struct {
 	Mean    float64 `json:"mean"`
 	Max     float64 `json:"max"`

@@ -33,7 +33,6 @@ rules:
       - {name: near_full, up: [90, 95]}
     elevated: 75
     min_change: 10
-    pairs_with: [tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
 
   - name: tickets.read.scarce
     title: "Samples with under 10% of read tickets left"
@@ -60,7 +59,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.read.empty, tickets.read.used, tickets.read.pool, tickets.read.wait]
 
   - name: tickets.read.empty
     title: "Samples with no read ticket left"
@@ -85,7 +83,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.read.used, tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
 
   - name: tickets.read.pool
     title: "Read ticket pool size"
@@ -97,7 +94,6 @@ rules:
       unit: "tickets"
       num: ["serverStatus/wiredTiger/concurrentTransactions/read/totalTickets"]
     min_change: 4
-    pairs_with: [tickets.read.used, tickets.read.scarce]
 
   - name: tickets.read.wait
     title: "Time waiting for a read ticket"
@@ -117,7 +113,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [tickets.read.empty, tickets.read.scarce, queue.readers]
 
   - name: tickets.read.used
     title: "Read tickets in use"
@@ -141,7 +136,6 @@ rules:
       - {name: near_full, up: [90, 95]}
     elevated: 75
     min_change: 10
-    pairs_with: [tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
 
   - name: tickets.read.scarce
     title: "Samples with under 10% of read tickets left"
@@ -168,7 +162,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.read.empty, tickets.read.used, tickets.read.pool, tickets.read.wait]
 
   - name: tickets.read.empty
     title: "Samples with no read ticket left"
@@ -193,7 +186,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.read.used, tickets.read.scarce, tickets.read.pool, tickets.read.wait, queue.readers]
 
   - name: tickets.read.pool
     title: "Read ticket pool size"
@@ -205,7 +197,6 @@ rules:
       unit: "tickets"
       num: ["serverStatus/queues/execution/read/totalTickets"]
     min_change: 4
-    pairs_with: [tickets.read.used, tickets.read.scarce]
 
   - name: tickets.read.wait
     title: "Time waiting for a read ticket"
@@ -225,7 +216,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [tickets.read.empty, tickets.read.scarce, queue.readers]
 
   - name: tickets.write.used
     title: "Write tickets in use"
@@ -249,7 +239,6 @@ rules:
       - {name: near_full, up: [90, 95]}
     elevated: 75
     min_change: 10
-    pairs_with: [tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
 
   - name: tickets.write.scarce
     title: "Samples with under 10% of write tickets left"
@@ -276,7 +265,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.write.empty, tickets.write.used, tickets.write.pool, tickets.write.wait]
 
   - name: tickets.write.empty
     title: "Samples with no write ticket left"
@@ -301,7 +289,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.write.used, tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
 
   - name: tickets.write.pool
     title: "Write ticket pool size"
@@ -313,7 +300,6 @@ rules:
       unit: "tickets"
       num: ["serverStatus/wiredTiger/concurrentTransactions/write/totalTickets"]
     min_change: 4
-    pairs_with: [tickets.write.used, tickets.write.scarce]
 
   - name: tickets.write.wait
     title: "Time waiting for a write ticket"
@@ -333,7 +319,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [tickets.write.empty, tickets.write.scarce, queue.writers]
 
   - name: tickets.write.used
     title: "Write tickets in use"
@@ -357,7 +342,6 @@ rules:
       - {name: near_full, up: [90, 95]}
     elevated: 75
     min_change: 10
-    pairs_with: [tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
 
   - name: tickets.write.scarce
     title: "Samples with under 10% of write tickets left"
@@ -384,7 +368,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.write.empty, tickets.write.used, tickets.write.pool, tickets.write.wait]
 
   - name: tickets.write.empty
     title: "Samples with no write ticket left"
@@ -409,7 +392,6 @@ rules:
     elevated: 1
     min_change: 3
     open_at: brief
-    pairs_with: [tickets.write.used, tickets.write.scarce, tickets.write.pool, tickets.write.wait, queue.writers]
 
   - name: tickets.write.pool
     title: "Write ticket pool size"
@@ -421,7 +403,6 @@ rules:
       unit: "tickets"
       num: ["serverStatus/queues/execution/write/totalTickets"]
     min_change: 4
-    pairs_with: [tickets.write.used, tickets.write.scarce]
 
   - name: tickets.write.wait
     title: "Time waiting for a write ticket"
@@ -441,7 +422,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [tickets.write.empty, tickets.write.scarce, queue.writers]
 
   - name: queue.readers
     title: "Samples with reads queued"
@@ -461,7 +441,6 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [tickets.read.empty, tickets.read.wait]
 
   - name: queue.writers
     title: "Samples with writes queued"
@@ -481,4 +460,3 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [tickets.write.empty, tickets.write.wait]

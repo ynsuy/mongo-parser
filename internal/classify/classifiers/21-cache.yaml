@@ -1,0 +1,16 @@
+pack: cache
+description: >-
+  The WiredTiger cache full enough, often enough, that application threads are doing the eviction
+  work themselves instead of the dedicated eviction threads keeping up on their own.
+
+classifiers:
+
+  - name: cache_pressure
+    title: "Cache pressure"
+    doc: >-
+      The cache is repeatedly pinned near full and application threads are evicting pages
+      themselves — the combination that shows up as operations slowing down for reasons that are
+      not disk or CPU.
+    when:
+      - {label: cache.fill_above_95, at_least: frequent}
+      - {label: cache.app_eviction, at_least: some}

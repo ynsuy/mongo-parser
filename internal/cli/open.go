@@ -20,9 +20,8 @@ import (
 )
 
 // runLabel opens one label up: the step after the stall. It says exactly when the label was past
-// its mark, second by second, reads every label it pairs with over those same seconds, names the
-// labels that moved with it, and says what the node's log said in the same window. With --at it
-// prints a window second by second, the label and its pairs side by side.
+// its mark, second by second, and says what the node's log said in the same window. With --at it
+// prints a window second by second.
 func runLabel(root string, args []string) error {
 	fs, c := newFlags("label")
 	w := addWindowFlags(fs)
@@ -113,7 +112,6 @@ func runLabel(root string, args []string) error {
 			notes = append(notes, damage)
 		}
 		results, skipped := label.Run(samples, node, stream.Identity().Version, start, end)
-		label.Relate(results)
 		nameMembers(results, cluster)
 		found := false
 		for _, r := range results {
@@ -121,7 +119,7 @@ func runLabel(root string, args []string) error {
 				continue
 			}
 			found = true
-			o := funnel.Open(r, results, samples, start, end, at, *span)
+			o := funnel.Open(r, samples, start, end, at, *span)
 			for j := range o.Focus {
 				e, err := readEvidence(st, root, node, everyNode, o.Focus[j].From, o.Focus[j].To)
 				if err != nil {
@@ -209,8 +207,8 @@ func nearestLabels(name string) string {
 	return "did you mean " + strings.Join(near[:min(6, len(near))], ", ")
 }
 
-// renderOpened is one opened label: what it is, what it did over the window, its stretches, and each
-// focus window with its pairs, the labels that moved with it, and the log.
+// renderOpened is one opened label: what it is, what it did over the window, its stretches, each
+// focus window, and the log.
 func renderOpened(o funnel.Opened, options render.TableOptions) string {
 	r := o.Result
 	rule := r.Rule()
@@ -233,9 +231,6 @@ func renderOpened(o funnel.Opened, options render.TableOptions) string {
 	)
 	if w := when(r); r.Shape != "steady" && r.Shape != "constant" {
 		lines = append(lines, "when: "+w)
-	}
-	if rel := movedWith(r); rel != "" {
-		lines = append(lines, "moved with: "+rel)
 	}
 	if len(o.Stretches) > 0 {
 		heading := fmt.Sprintf("Seconds past the mark (%s): %s", markText(rule), plural(o.StretchCount, "stretch"))
@@ -294,32 +289,12 @@ func stretchTable(o funnel.Opened, options render.TableOptions) string {
 	}, options)
 }
 
-// renderFocus is one window: the label and its pairs over it against their usual, then the log.
+// renderFocus is one window: the label over it, then the log.
 func renderFocus(o funnel.Opened, f funnel.Focus, options render.TableOptions) string {
-	lines := []string{fmt.Sprintf("%s → %s UTC — %s", f.From.Format("01-02 15:04:05"), f.To.Format("15:04:05"), f.Why)}
-	names, here, usual := []string{}, []string{}, []string{}
-	add := func(name string, rule label.Rule, unit string, window, normal label.Window, missing string) {
-		names = append(names, name)
-		switch {
-		case missing != "":
-			here, usual = append(here, missing), append(usual, "")
-		default:
-			here = append(here, windowText(rule, unit, window))
-			usual = append(usual, windowText(rule, unit, normal))
-		}
-	}
-	add(strings.TrimSpace(o.Result.Label+" "+o.Result.Instance), o.Result.Rule(), o.Result.SignalUnit, f.Self, label.Window{}, "")
-	usual[0] = "-"
-	for _, p := range f.Pairs {
-		add(strings.TrimSpace(p.Label+" "+p.Instance), p.Rule(), p.SignalUnit, p.Window, p.Usual, p.Missing)
-	}
-	lines = append(lines, render.Table([]render.Column{
-		{Title: "Label", Values: names},
-		{Title: "In these seconds", Values: here},
-		{Title: "Usually", Values: usual},
-	}, options))
+	lines := []string{fmt.Sprintf("%s → %s UTC — %s", f.From.Format("01-02 15:04:05"), f.To.Format("15:04:05"), f.Why),
+		"In these seconds: " + windowText(o.Result.Rule(), o.Result.SignalUnit, f.Self)}
 	if len(f.Seconds) > 0 {
-		lines = append(lines, "", secondsTable(f, options))
+		lines = append(lines, "", secondsTable(o, f, options))
 	}
 	if e, ok := f.Evidence.(evidence); ok {
 		lines = append(lines, "", evidenceText(e))
@@ -344,28 +319,28 @@ func windowText(rule label.Rule, unit string, w label.Window) string {
 }
 
 // secondsTable prints a window second by second, a repeated row folded into the row before it.
-func secondsTable(f funnel.Focus, options render.TableOptions) string {
-	columns := f.Columns
+func secondsTable(o funnel.Opened, f funnel.Focus, options render.TableOptions) string {
 	at := make([]string, len(f.Seconds))
-	values := make([][]string, len(columns))
+	values := make([]string, len(f.Seconds))
 	for i, row := range f.Seconds {
 		at[i] = row.At.Format("15:04:05")
 		if row.Repeat > 0 {
 			at[i] += fmt.Sprintf(" +%ds", row.Repeat)
 		}
-		for j, v := range row.Values {
-			text := "-"
-			if !math.IsNaN(v) {
-				text = render.Compact(v)
-			}
-			values[j] = append(values[j], text)
+		text := "-"
+		if !math.IsNaN(row.Value) {
+			text = render.Compact(row.Value)
 		}
+		values[i] = text
 	}
-	table := []render.Column{{Title: "Second", Values: at}}
-	for j, name := range columns {
-		table = append(table, render.Column{Title: name, Align: render.AlignRight, Values: values[j]})
+	name := strings.TrimSpace(o.Result.Label + " " + o.Result.Instance)
+	if o.Result.SignalUnit != "" {
+		name += " (" + o.Result.SignalUnit + ")"
 	}
-	return render.Table(table, options)
+	return render.Table([]render.Column{
+		{Title: "Second", Values: at},
+		{Title: name, Align: render.AlignRight, Values: values},
+	}, options)
 }
 
 // evidenceText is what the node's log said in the window, in a few lines.

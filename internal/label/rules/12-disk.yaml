@@ -28,8 +28,6 @@ rules:
       - {name: very_high, up: [92, 97]}
     elevated: 85
     min_change: 15
-    pairs_with: [disk.busy_above_95, disk.await, disk.queue, disk.iops, disk.throughput]
-    open_with: [disk.await]
 
   - name: disk.busy_above_95
     title: "Device-busy samples above 95%"
@@ -55,8 +53,6 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [disk.busy, disk.await, checkpoint.running]
-    open_with: [disk.await]
 
   - name: disk.await
     title: "Disk time per request"
@@ -77,7 +73,6 @@ rules:
       - {name: very_slow, up: [30, 50]}
     elevated: 20
     min_change: 5
-    pairs_with: [disk.busy, disk.queue, cpu.iowait]
 
   - name: disk.read_await
     title: "Disk time per read"
@@ -93,7 +88,6 @@ rules:
     levels: *await_levels
     elevated: 20
     min_change: 5
-    pairs_with: [cache.read_in, disk.busy]
 
   - name: disk.write_await
     title: "Disk time per write"
@@ -109,7 +103,6 @@ rules:
     levels: *await_levels
     elevated: 20
     min_change: 5
-    pairs_with: [checkpoint.duration, cache.dirty, tickets.write.scarce]
 
   - name: disk.queue
     title: "Disk requests in flight"
@@ -128,8 +121,6 @@ rules:
       - {name: deep, up: [8, 16]}
     elevated: 8
     min_change: 2
-    pairs_with: [disk.await, disk.busy]
-    open_with: [disk.await]
 
   - name: disk.iops
     title: "Disk requests a second"
@@ -141,7 +132,6 @@ rules:
       real_device: true
       num: ["systemMetrics/disks/{i}/reads", "systemMetrics/disks/{i}/writes"]
     min_change: 100
-    pairs_with: [disk.busy, disk.await]
 
   - name: disk.throughput
     title: "Disk throughput"
@@ -154,4 +144,3 @@ rules:
       real_device: true
       num: ["systemMetrics/disks/{i}/read_sectors", "systemMetrics/disks/{i}/write_sectors"]
     min_change: 10
-    pairs_with: [disk.busy, disk.iops]

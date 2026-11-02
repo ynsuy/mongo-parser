@@ -59,18 +59,10 @@ type Rule struct {
 	// MinChange is the smallest move, in the view's unit, that counts as a change at all. It keeps a
 	// disk that went from 1% to 3% busy from being reported as tripling.
 	MinChange float64 `json:"min_change" yaml:"min_change"`
-	// PairsWith names the labels to read beside this one when it is opened up: the pool size beside
-	// how scarce the pool was, the wait time beside the queue.
-	PairsWith []string `json:"pairs_with,omitempty" yaml:"pairs_with"`
 	// OpenAt is the band from which a peak is worth opening the label up for. Empty is the top two
 	// bands of four or more, or the top band of fewer. A pool with no ticket left for a single second
 	// is worth opening; a CPU pinned for a single second is not, and this is where that is said.
 	OpenAt string `json:"open_at,omitempty" yaml:"open_at"`
-	// OpenWith names labels that must agree before this one is worth opening: at least one of them,
-	// on the same node and the same instance, has to have left its lowest band. A device busy every
-	// second of the day that still answers in a tenth of a millisecond is not a device anything waits
-	// on, and disk.busy says so only beside disk.await.
-	OpenWith []string `json:"open_with,omitempty" yaml:"open_with"`
 	// Since and Until bound the server versions the metric exists in, Until exclusive. Empty is
 	// every version this tool reads. A node outside the range is reported as not having the label,
 	// with the reason, rather than as a gap nobody can explain.
@@ -216,9 +208,6 @@ func load() ([]Rule, error) {
 			out = append(out, r)
 		}
 	}
-	if err := checkPairs(out); err != nil {
-		return nil, err
-	}
 	return out, nil
 }
 
@@ -308,31 +297,6 @@ func (r Rule) OpenFrom() int {
 		return n - 2
 	}
 	return n - 1
-}
-
-// checkPairs refuses a pairs_with that names no label: a pairing that silently finds nothing is a
-// drill-down missing the one number that would have explained it.
-func checkPairs(rules []Rule) error {
-	known := map[string]bool{}
-	for _, r := range rules {
-		known[r.Name] = true
-	}
-	for _, r := range rules {
-		for _, p := range r.PairsWith {
-			if !known[p] {
-				return fmt.Errorf("%s: pairs_with %s, which is not a label", r.Name, p)
-			}
-			if p == r.Name {
-				return fmt.Errorf("%s pairs with itself", r.Name)
-			}
-		}
-		for _, p := range r.OpenWith {
-			if !known[p] || p == r.Name {
-				return fmt.Errorf("%s: open_with %s, which is not another label", r.Name, p)
-			}
-		}
-	}
-	return nil
 }
 
 // paths is every entry the signal reads.

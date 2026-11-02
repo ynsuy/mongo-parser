@@ -60,9 +60,6 @@ func labelText() string {
 		if r.Applies != "" {
 			lines = append(lines, "  applies: "+strings.Join(strings.Fields(r.Applies), " "))
 		}
-		if len(r.PairsWith) > 0 {
-			lines = append(lines, "  pairs:   "+strings.Join(r.PairsWith, ", "))
-		}
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")

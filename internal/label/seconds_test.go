@@ -139,8 +139,7 @@ func TestARatioMinuteIsTheRatioOfItsSums(t *testing.T) {
 	}
 }
 
-// Opened up, the empty pool is ten stretches of ten seconds, each starting on the minute, and the
-// pool size beside it — a paired label — is read over exactly those seconds.
+// Opened up, the empty pool is ten stretches of ten seconds, each starting on the minute.
 func TestStretchesAreTheSecondsPastTheMark(t *testing.T) {
 	old := "serverStatus/wiredTiger/concurrentTransactions/read/"
 	empty := func(i int) bool { m := i / 60; return m >= 60 && m < 70 && i%60 < 10 }

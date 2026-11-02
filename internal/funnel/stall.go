@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ynsuy/mongo-parser/internal/classify"
 	"github.com/ynsuy/mongo-parser/internal/label"
 )
 
@@ -42,7 +43,10 @@ type Stall struct {
 	Notice     []Item            `json:"notice"`
 	Ordinary   []NodeCount       `json:"ordinary"`
 	Imbalances []label.Imbalance `json:"imbalances,omitempty"`
-	Skipped    []label.Skip      `json:"skipped,omitempty"`
+	// Classified is every composite symptom pattern found: several labels at or past their own
+	// bands together, on the same node.
+	Classified []classify.Match `json:"classified,omitempty"`
+	Skipped    []label.Skip     `json:"skipped,omitempty"`
 }
 
 // notableShapes are the shapes that say something happened.
@@ -52,17 +56,22 @@ var notableShapes = map[string]bool{
 
 // Lay sorts the labels into the stall. next makes the command that opens one; it is the caller's
 // because the bundle path and the flags are.
-func Lay(results []label.Result, imbalances []label.Imbalance, skipped []label.Skip, next func(label.Result) string) Stall {
-	stall := Stall{Skipped: skipped}
+//
+// A label named as a classifier's evidence is left out of Open, Notice and Ordinary: Classified
+// already carries its reading, its window and the command that opens it, so listing it again would
+// only repeat the same fact under a second heading.
+func Lay(results []label.Result, imbalances []label.Imbalance, classified []classify.Match, skipped []label.Skip, next func(label.Result) string) Stall {
+	index := indexResults(results)
+	classified = withNext(classified, index, next)
+	claimed := claimedByClassification(classified)
+	stall := Stall{Skipped: skipped, Classified: classified}
 	ordinary := map[string]*NodeCount{}
 	order := make([]string, 0, 8)
-	index := map[string]label.Result{}
 	for _, r := range results {
-		index[key(r.Source, r.Label, r.Instance)] = r
-	}
-	for _, r := range results {
+		if claimed[key(r.Source, r.Label, r.Instance)] {
+			continue
+		}
 		item := tier(r)
-		corroborate(&item, index)
 		item.Next = next(r)
 		switch item.Tier {
 		case TierOpen:
@@ -104,36 +113,53 @@ func Lay(results []label.Result, imbalances []label.Imbalance, skipped []label.S
 
 func key(source, name, instance string) string { return source + "\x00" + name + "\x00" + instance }
 
-// corroborate holds a label back from the open list when the labels its rule needs to agree all
-// stayed in their lowest band on the same node and instance. It is still worth noticing: the
-// reading is real, it is only not a reason to look further on its own.
-func corroborate(item *Item, index map[string]label.Result) {
-	rule := item.Rule()
-	if item.Tier != TierOpen || len(rule.OpenWith) == 0 {
-		return
+// indexResults is every result keyed by node, label and instance, so a classifier's evidence can be
+// read back to the exact result it was built from.
+func indexResults(results []label.Result) map[string]label.Result {
+	index := make(map[string]label.Result, len(results))
+	for _, r := range results {
+		index[key(r.Source, r.Label, r.Instance)] = r
 	}
-	quiet := make([]string, 0, len(rule.OpenWith))
-	for _, name := range rule.OpenWith {
-		other, found := index[key(item.Source, name, item.Instance)]
-		if !found {
-			return // nothing to disagree with: the label stands on its own
+	return index
+}
+
+// withNext fills in the command that opens each piece of evidence behind a classified match, the
+// same way an opened label's own Next is filled in.
+func withNext(classified []classify.Match, index map[string]label.Result, next func(label.Result) string) []classify.Match {
+	out := make([]classify.Match, len(classified))
+	for i, m := range classified {
+		because := make([]classify.Evidence, len(m.Because))
+		for j, e := range m.Because {
+			if r, found := index[key(m.Source, e.Label, e.Instance)]; found {
+				e.Next = next(r)
+			}
+			because[j] = e
 		}
-		if _, band := other.Rule().Strongest(other.Peak); band > 0 {
-			return
-		}
-		lowest, _ := other.Rule().Strongest(other.Peak)
-		quiet = append(quiet, name+" stayed "+lowest)
+		m.Because = because
+		out[i] = m
 	}
-	item.Tier = TierNotice
-	item.Why = append(item.Why, "but "+strings.Join(quiet, ", "))
+	return out
+}
+
+// claimedByClassification is every label and instance, on its node, that some classified match
+// already named as evidence.
+func claimedByClassification(classified []classify.Match) map[string]bool {
+	claimed := map[string]bool{}
+	for _, m := range classified {
+		for _, e := range m.Because {
+			claimed[key(m.Source, e.Label, e.Instance)] = true
+		}
+	}
+	return claimed
 }
 
 // tier decides where one label sits, and records why.
 //
 // Open is a peak in a band the rule says is worth opening (the top two of four or more by default),
-// or a mark the label spent more than a rare minute past. Notice is a peak anywhere above the
-// lowest band, or a notable shape — a workload that stepped up is worth a glance even when no level
-// is high, but a shape alone does not make a middle band worth opening.
+// a mark the label spent more than a rare minute past, or a notable shape on a label with no bands
+// of its own — a shape-only label has no other way to say anything, so an excursion is the whole of
+// what it can report, not a lesser version of one. Notice is a peak anywhere above the lowest band,
+// or a notable shape on a label that does have bands and whose peak did not reach them.
 func tier(r label.Result) Item {
 	rule := r.Rule()
 	item := Item{Result: r, Tier: TierOrdinary}
@@ -160,7 +186,12 @@ func tier(r label.Result) Item {
 	}
 	if shape {
 		item.Why = append(item.Why, r.Shape)
-		if item.Tier == TierOrdinary {
+		switch {
+		case len(rule.Levels) == 0:
+			// No band ever promotes this label; the shape is the only signal it has, and an
+			// excursion already cleared a real bar (margin()) to be found at all.
+			item.Tier = TierOpen
+		case item.Tier == TierOrdinary:
 			item.Tier = TierNotice
 		}
 	}

@@ -23,7 +23,6 @@ rules:
       - {name: very_slow, up: [50, 100]}
     elevated: 50
     min_change: 5
-    pairs_with: [tickets.read.scarce, query.targeting, cache.fill_above_95, disk.read_await]
 
   - name: latency.writes
     title: "Write latency"
@@ -39,7 +38,6 @@ rules:
     levels: *latency_levels
     elevated: 50
     min_change: 5
-    pairs_with: [tickets.write.scarce, cache.dirty_above_20, flow.lagged, repl.majority_lag]
 
   - name: latency.commands
     title: "Command latency"
@@ -56,7 +54,6 @@ rules:
     levels: *latency_levels
     elevated: 50
     min_change: 5
-    pairs_with: [tickets.read.scarce, query.targeting]
 
   - name: ops.total
     title: "Operations a second"
@@ -68,7 +65,6 @@ rules:
       num: ["serverStatus/opcounters/query", "serverStatus/opcounters/getmore", "serverStatus/opcounters/insert",
             "serverStatus/opcounters/update", "serverStatus/opcounters/delete", "serverStatus/opcounters/command"]
     min_change: 50
-    pairs_with: [ops.writes, connections.current]
 
   - name: ops.writes
     title: "Writes a second"
@@ -79,7 +75,6 @@ rules:
       unit: "ops/s"
       num: ["serverStatus/opcounters/insert", "serverStatus/opcounters/update", "serverStatus/opcounters/delete"]
     min_change: 50
-    pairs_with: [cache.dirty, checkpoint.duration]
 
   - name: query.targeting
     title: "Documents examined per document returned"
@@ -99,7 +94,6 @@ rules:
       - {name: very_high, up: [500, 1000]}
     elevated: 100
     min_change: 10
-    pairs_with: [query.collscans, cache.read_in, cpu.busy]
 
   - name: query.collscans
     title: "Collection scans"
@@ -116,7 +110,6 @@ rules:
       - {name: many, up: [1, 10]}
     elevated: 1
     min_change: 0.5
-    pairs_with: [query.targeting, cache.read_in]
 
   - name: query.scan_and_order
     title: "scanAndOrder counter rate"
@@ -127,7 +120,6 @@ rules:
       unit: "/s"
       num: ["serverStatus/metrics/operation/scanAndOrder"]
     min_change: 1
-    pairs_with: [query.targeting, memory.heap_outside_cache]
 
   - name: writes.conflicts
     title: "Write conflicts"
@@ -144,7 +136,6 @@ rules:
       - {name: heavy, up: [10, 50]}
     elevated: 10
     min_change: 2
-    pairs_with: [ops.writes, latency.writes]
 
   - name: ttl.deletes
     title: "Documents deleted by TTL"
@@ -156,7 +147,6 @@ rules:
       unit: "docs/s"
       num: ["serverStatus/metrics/ttl/deletedDocuments"]
     min_change: 50
-    pairs_with: [cache.dirty, disk.write_await, repl.member_lag]
 
   - name: cursors.open
     title: "Open cursors"
@@ -167,4 +157,3 @@ rules:
       unit: "cursors"
       num: ["serverStatus/metrics/cursor/open/total"]
     min_change: 50
-    pairs_with: [memory.heap_outside_cache, connections.current]

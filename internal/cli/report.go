@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ynsuy/mongo-parser/internal/analyze"
+	"github.com/ynsuy/mongo-parser/internal/classify"
 	"github.com/ynsuy/mongo-parser/internal/funnel"
 	"github.com/ynsuy/mongo-parser/internal/label"
 	"github.com/ynsuy/mongo-parser/internal/render"
@@ -98,7 +99,7 @@ func runReport(root string, args []string) error {
 		states, labelled, cacheSizes, labelFailures = labelStreams(set, start, end)
 		nameMembers(labelled.Results, cluster)
 		streamFailures = append(streamFailures, labelFailures...)
-		stall = funnel.Lay(labelled.Results, labelled.Imbalances, labelled.Skipped, openCommand(root))
+		stall = funnel.Lay(labelled.Results, labelled.Imbalances, classify.Classify(labelled.Results), labelled.Skipped, openCommand(root))
 	}
 
 	shapes := queries.Shapes()
@@ -458,7 +459,6 @@ func labelStreams(set *streamSet, start, end time.Time) ([]replMember, labels, m
 		}
 	}
 	sortMemberStates(states)
-	label.Relate(results)
 	return states, labels{results, label.Imbalances(results, peers), unlabelled}, cache, failures
 }
 

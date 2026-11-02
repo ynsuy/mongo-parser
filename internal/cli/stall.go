@@ -7,36 +7,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ynsuy/mongo-parser/internal/classify"
 	"github.com/ynsuy/mongo-parser/internal/funnel"
 	"github.com/ynsuy/mongo-parser/internal/label"
 	"github.com/ynsuy/mongo-parser/internal/render"
 )
 
-// renderStall is the first look at a bundle's labels: the ones worth opening, the ones worth
-// noticing, and a count of the ordinary rest. Each one worth opening names the command that opens
-// it; the ordinary ones are in --json, with what every band means.
+// renderStall is the first look at a bundle's labels, in the two stages an investigation is built
+// from: Classification, the composite patterns several labels made together, and Feature Extraction,
+// every label on its own — ranked highest band first, a count of the ordinary rest, and how alike
+// the things that should be alike were.
 func renderStall(stall funnel.Stall, root string, options render.TableOptions, cluster *analyze.Cluster) string {
-	parts := make([]string, 0, 6)
-	if len(stall.Open) > 0 {
-		parts = append(parts, fmt.Sprintf("Worth opening (%d)\n%s", len(stall.Open), stallTable(stall.Open, options)))
+	parts := make([]string, 0, 2)
+	if text := renderClassified(stall.Classified, options); text != "" {
+		parts = append(parts, "Classification\n"+text)
 	}
-	if len(stall.Notice) > 0 {
-		parts = append(parts, fmt.Sprintf("Worth noticing (%d)\n%s", len(stall.Notice), stallTable(stall.Notice, options)))
+	fe := make([]string, 0, 6)
+	// Open and Notice are the rule's own ranking of a label, not two separate outputs: a label
+	// worth opening sorts ahead of one merely worth noticing, in the one Feature Extraction list.
+	items := make([]funnel.Item, 0, len(stall.Open)+len(stall.Notice))
+	items = append(items, stall.Open...)
+	items = append(items, stall.Notice...)
+	if len(items) > 0 {
+		fe = append(fe, stallTable(items, options))
 	}
-	if text := memberNote(append(stall.Open, stall.Notice...), cluster); text != "" {
-		parts = append(parts, text)
+	if text := memberNote(items, cluster); text != "" {
+		fe = append(fe, text)
 	}
-	if len(stall.Open)+len(stall.Notice) > 0 {
-		parts = append(parts, fmt.Sprintf("Open one, second by second, beside the labels it pairs with and the logs of the same minutes:\n  mongo-parser label %s <label> --source <node>", root))
+	if len(items) > 0 {
+		fe = append(fe, fmt.Sprintf("Open one, second by second, beside the logs of the same minutes:\n  mongo-parser label %s <label> --source <node>", root))
 	}
 	if line := ordinaryLine(stall.Ordinary); line != "" {
-		parts = append(parts, line)
+		fe = append(fe, line)
 	}
 	if text := renderImbalances(stall.Imbalances, options); text != "" {
-		parts = append(parts, text)
+		fe = append(fe, text)
 	}
 	if text := skippedNote(stall.Skipped); text != "" {
-		parts = append(parts, text)
+		fe = append(fe, text)
+	}
+	if len(fe) > 0 {
+		heading := "Feature Extraction"
+		if len(items) > 0 {
+			heading = fmt.Sprintf("Feature Extraction (%d)", len(items))
+		}
+		parts = append(parts, heading+"\n"+strings.Join(fe, "\n\n"))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -57,7 +72,6 @@ func stallTable(items []funnel.Item, options render.TableOptions) string {
 		{Title: "Worst second", Values: text(worstSecond)},
 		{Title: "When", Values: text(func(i funnel.Item) string { return when(i.Result) })},
 		{Title: "Why", Values: text(func(i funnel.Item) string { return strings.Join(i.Why, "; ") })},
-		{Title: "Moved with", Values: text(func(i funnel.Item) string { return movedWith(i.Result) })},
 	}, options)
 }
 
@@ -178,24 +192,6 @@ func when(r label.Result) string {
 	return "worst " + r.PeakAt.Format(stamp)
 }
 
-// movedWith names the two labels that moved most closely with this one, and which went first.
-func movedWith(r label.Result) string {
-	names := make([]string, 0, 2)
-	for _, rel := range r.Related[:min(2, len(r.Related))] {
-		name := strings.TrimSpace(rel.Label + " " + rel.Instance)
-		switch {
-		case rel.R < 0:
-			name += " (opposite)"
-		case rel.Lead > 0:
-			name += fmt.Sprintf(" (%dm before)", rel.Lead)
-		case rel.Lead < 0:
-			name += fmt.Sprintf(" (%dm after)", -rel.Lead)
-		}
-		names = append(names, name)
-	}
-	return strings.Join(names, ", ")
-}
-
 // renderImbalances lists what was not alike: one disk of several, one node of a set.
 func renderImbalances(found []label.Imbalance, options render.TableOptions) string {
 	if len(found) == 0 {
@@ -223,6 +219,35 @@ func renderImbalances(found []label.Imbalance, options render.TableOptions) stri
 		{Title: "p95", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Value) })},
 		{Title: "Others", Align: render.AlignRight, Values: text(func(im label.Imbalance) string { return render.Compact(im.Others) })},
 		{Title: "Ratio", Values: text(func(im label.Imbalance) string { return fmt.Sprintf("%.1fx (%s)", im.Ratio, im.Comparison) })},
+	}, options)
+}
+
+// renderClassified lists every composite symptom pattern found: several labels at or past their own
+// bands together, on the same node.
+func renderClassified(found []classify.Match, options render.TableOptions) string {
+	if len(found) == 0 {
+		return ""
+	}
+	text := func(read func(classify.Match) string) []string {
+		values := make([]string, len(found))
+		for i, m := range found {
+			values[i] = read(m)
+		}
+		return values
+	}
+	because := func(m classify.Match) string {
+		parts := make([]string, len(m.Because))
+		for i, e := range m.Because {
+			name := strings.TrimSpace(e.Label + " " + e.Instance)
+			parts[i] = fmt.Sprintf("%s %s (usual %s, p95 %s, peak %s)",
+				name, e.Band, amount(e.Usual, e.Unit), amount(e.P95, e.Unit), secondAt(e.Peak, e.Unit, e.PeakAt))
+		}
+		return strings.Join(parts, "; ")
+	}
+	return render.Table([]render.Column{
+		{Title: "Node", Values: text(func(m classify.Match) string { return m.Source })},
+		{Title: "Pattern", Values: text(func(m classify.Match) string { return m.Title })},
+		{Title: "Because", Values: text(because), Elastic: true},
 	}, options)
 }
 

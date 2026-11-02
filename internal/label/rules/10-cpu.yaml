@@ -38,7 +38,6 @@ rules:
       - {name: very_high, up: [88, 95]}
     elevated: 80
     min_change: 10
-    pairs_with: [cpu.busy_above_95, cpu.run_queue, cpu.iowait, cpu.kernel_share]
 
   - name: cpu.busy_above_95
     title: "CPU-busy samples above 95%"
@@ -60,7 +59,6 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [cpu.busy, cpu.run_queue]
 
   - name: cpu.iowait
     title: "Host CPU iowait share"
@@ -79,7 +77,6 @@ rules:
       - {name: high, up: [20, 30]}
     elevated: 10
     min_change: 5
-    pairs_with: [disk.busy, disk.await, cpu.blocked]
 
   - name: cpu.steal
     title: "Host CPU steal-time share"
@@ -97,7 +94,6 @@ rules:
       - {name: high, up: [5, 10]}
     elevated: 5
     min_change: 3
-    pairs_with: [cpu.busy]
 
   - name: cpu.kernel_share
     title: "CPU time in the kernel"
@@ -116,7 +112,6 @@ rules:
       - {name: dominant, up: [55, 65]}
     elevated: 50
     min_change: 10
-    pairs_with: [cpu.busy, cpu.context_switches]
 
   # FTDC renamed num_cpus to num_logical_cores in 7.0.10, back in 7.0.11, and again in 7.0.16 and 7.3.
   - name: cpu.run_queue
@@ -135,7 +130,6 @@ rules:
       - {name: very_high, up: [1.2, 2]}
     elevated: 1.5
     min_change: 0.3
-    pairs_with: [cpu.busy, cpu.busy_above_95]
 
   - name: cpu.run_queue
     title: "Runnable threads per core"
@@ -150,7 +144,6 @@ rules:
     levels: *run_queue_levels
     elevated: 1.5
     min_change: 0.3
-    pairs_with: [cpu.busy, cpu.busy_above_95]
 
   - name: cpu.blocked
     title: "Processes in uninterruptible sleep"
@@ -166,7 +159,6 @@ rules:
       - {name: many, up: [4, 10]}
     elevated: 4
     min_change: 2
-    pairs_with: [cpu.iowait, disk.await]
 
   - name: cpu.context_switches
     title: "Context switches"
@@ -177,4 +169,3 @@ rules:
       unit: "/s"
       num: ["systemMetrics/cpu/ctxt"]
     min_change: 5000
-    pairs_with: [connections.created, cpu.kernel_share]

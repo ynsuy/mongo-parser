@@ -34,7 +34,6 @@ rules:
       - {name: far_behind, up: [120, 300]}
     elevated: 30
     min_change: 5
-    pairs_with: [repl.majority_lag, flow.lagged, net.retransmit]
 
   - name: repl.member_lag
     title: "Member replication lag"
@@ -58,7 +57,6 @@ rules:
     levels: *lag_levels
     elevated: 30
     min_change: 5
-    pairs_with: [repl.majority_lag, flow.lagged, net.retransmit]
 
   - name: repl.majority_lag
     title: "Majority commit lag"
@@ -81,7 +79,6 @@ rules:
       - {name: lagging, up: [10, 20]}
     elevated: 10
     min_change: 2
-    pairs_with: [repl.member_lag, flow.lagged, latency.writes]
 
   - name: flow.lagged
     title: "Samples with flowControl.isLagged set"
@@ -104,7 +101,6 @@ rules:
       - {name: most, up: [30, 48]}
     elevated: 1
     min_change: 3
-    pairs_with: [flow.wait, repl.majority_lag, latency.writes]
 
   - name: flow.wait
     title: "Time writers waited on flow control"
@@ -122,7 +118,6 @@ rules:
       - {name: heavy, up: [100, 500]}
     elevated: 100
     min_change: 10
-    pairs_with: [flow.lagged, latency.writes]
 
   - name: repl.apply_rate
     title: "Oplog entries applied"
@@ -134,7 +129,6 @@ rules:
       unit: "ops/s"
       num: ["serverStatus/metrics/repl/apply/ops"]
     min_change: 50
-    pairs_with: [repl.buffer_fill, repl.member_lag]
 
   # 8.0 split the buffer into a write buffer and an apply buffer; the apply side is the one that
   # fills when the node cannot apply what it fetched.
@@ -155,7 +149,6 @@ rules:
       - {name: full, up: [70, 90]}
     elevated: 70
     min_change: 10
-    pairs_with: [repl.buffer_full, repl.apply_rate, repl.member_lag]
 
   - name: repl.buffer_fill
     title: "Apply buffer fill"
@@ -171,7 +164,6 @@ rules:
     levels: *buffer_levels
     elevated: 70
     min_change: 10
-    pairs_with: [repl.buffer_full, repl.apply_rate, repl.member_lag]
 
   - name: repl.buffer_full
     title: "Apply-buffer samples above 90%"
@@ -194,7 +186,6 @@ rules:
       - {name: constant, up: [40, 55]}
     elevated: 1
     min_change: 3
-    pairs_with: [repl.buffer_fill, repl.apply_rate]
 
   - name: repl.buffer_full
     title: "Apply-buffer samples above 90%"
@@ -213,4 +204,3 @@ rules:
     levels: *time_levels
     elevated: 1
     min_change: 3
-    pairs_with: [repl.buffer_fill, repl.apply_rate]

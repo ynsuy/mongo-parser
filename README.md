@@ -36,8 +36,8 @@ stamps it too (see [Versions](#versions)).
 Labels help navigation. Metrics covered by the catalogue are read against a definition — a YAML file in
 `internal/label/rules` — and described by its level, its shape and when it changed. The report lays
 them out as worth opening, worth noticing, and ordinary. `label` opens one: observed samples past
-its reference, the labels its definition pairs with over those same samples, measured correlations,
-and what the node's log said in the window. `--at` reads a window second by second, and `lines`
+its reference, and what the node's log said in the window. `--at` reads a window second by second,
+and `lines`
 prints the log lines themselves.
 
 The parser labels and does not diagnose. Why something happened is for whoever reads the labels
@@ -63,28 +63,44 @@ the ones above it.
 | Layer | Packages | What they do |
 | --- | --- | --- |
 | Reading the bundle | `source`, `ingest`, `store`, `ftdc`, `metrics`, `series`, `collector`, `shell`, `timeparse` | Find what a bundle holds, read every log line once into a SQLite store, decode FTDC, know what each FTDC path is and turn counters into per-second rates (`metrics`), hold a metric over a window as data (`series`), read the collector's side outputs, parse the times people type. |
-| Describing it | `label` (FTDC), `analyze` (logs) | `label` turns FTDC into labels from the rules in `internal/label/rules`; `analyze` turns stored log lines into slow query shapes, replication events, catalogue changes, logged conditions and log groups. |
-| Narrowing | `funnel` | The stall (every label, sorted for a first look) and an opened label (its stretches, its pairs, its windows). |
+| Describing it | `label` (FTDC), `analyze` (logs), `classify` (composite patterns) | `label` turns FTDC into labels from the rules in `internal/label/rules`; `analyze` turns stored log lines into slow query shapes, replication events, catalogue changes, logged conditions and log groups; `classify` names a fixed symptom pattern, such as `io_saturation`, when several labels are at or past their own bands together on the same node. |
+| Narrowing | `funnel` | The stall (every label, sorted for a first look) and an opened label (its stretches, its windows). |
 | Showing | `render`, `cli` | Terminal tables and charts, and one command per question. |
 | Serving agents | `mcpserver`, `guard` | `mongo-parser mcp` serves every command as an MCP tool over stdio; `mongo-parser hook` is the PreToolUse hook that keeps file and shell tools out of the bundles this machine has stores for. |
 
 ## The rules
 
 A rule names its FTDC paths, what one second's value is (`signal`), which summary of each minute its
-bands are read on (`view`: `mean`, `max`, `min`, or `time_above` / `time_below` a `threshold`), its
-fuzzy bands, the labels it `pairs_with`, and the labels that must agree before it is worth opening
-(`open_with`). A burst that a minute mean would hide — a ticket pool
+bands are read on (`view`: `mean`, `max`, `min`, or `time_above` / `time_below` a `threshold`), and its
+fuzzy bands. A burst that a minute mean would hide — a ticket pool
 empty in individual samples — uses normalized valid-sample shares instead. A field MongoDB renamed is a second definition
 of the same label with its own `since` / `until`.
 
-The rules are checked when the binary starts: an unknown field, a band that leaves a gap, a time view
-without a threshold or a pairing with a label that does not exist is refused. Whether the paths are
+The rules are checked when the binary starts: an unknown field, a band that leaves a gap, or a time
+view without a threshold is refused. Whether the paths are
 ones the server actually writes can only be checked against a real capture, of each server version
 a rule changes for:
 
 ```bash
 DBA_FTDC_DIR=/path/to/diagnostic.data go test ./internal/label -run TestRulesReadPathsTheServerWrites
 ```
+
+## Classifiers
+
+A classifier, in `internal/classify/classifiers`, names a fixed symptom pattern — `io_saturation`,
+`cpu_saturation` — as several labels (`when`) each required to be at or past a named band (`at_least`)
+of their own rule, on the same node, at once. It measures nothing of its own: it only gives a
+reusable name to a combination of labels package `label` already made, the way `io_saturation` is
+`disk.busy` and `disk.await` and `cpu.iowait` all elevated together rather than any one of them read
+alone. A classifier still does not diagnose — it names a pattern worth a reader's attention, not a
+cause. Every match names which label (and instance, when it has them) met each condition, and at
+what — its usual and peak reading, when the peak was, and the command that opens it — the worst
+instance of a per-instance label, such as the busiest disk. A label named this way is left out of
+the stall's own open and notice lists: the match already carries its reading, so the stall does not
+repeat it under a second heading.
+
+The classifiers are checked the same way the rules are: an unknown label, an unknown band, or fewer
+than two conditions is refused when the binary starts.
 
 ## Agents
 

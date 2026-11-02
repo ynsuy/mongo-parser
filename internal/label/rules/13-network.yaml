@@ -23,7 +23,6 @@ rules:
       - {name: very_high, up: [2, 3]}
     elevated: 1
     min_change: 0.5
-    pairs_with: [repl.member_lag, net.resets]
 
   - name: net.listen_overflows
     title: "Listen queue overflows"
@@ -40,7 +39,6 @@ rules:
       - {name: many, up: [1, 5]}
     elevated: 0.1
     min_change: 0.1
-    pairs_with: [connections.created, cpu.busy_above_95]
 
   - name: net.resets
     title: "TCP connections reset"
@@ -51,7 +49,6 @@ rules:
       unit: "/s"
       num: ["systemMetrics/netstat/Tcp:EstabResets"]
     min_change: 5
-    pairs_with: [connections.created, net.retransmit]
 
   - name: net.traffic
     title: "mongod network traffic"
@@ -63,4 +60,3 @@ rules:
       scale: 0.000001
       num: ["serverStatus/network/bytesIn", "serverStatus/network/bytesOut"]
     min_change: 5
-    pairs_with: [ops.total, net.retransmit]

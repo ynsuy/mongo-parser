@@ -57,6 +57,20 @@ func (r Rule) Strongest(v float64) (string, int) {
 	return name, index
 }
 
+// HasLevel reports whether name is one of the rule's bands.
+func (r Rule) HasLevel(name string) bool { return r.levelIndex(name) >= 0 }
+
+// AtLeast reports whether v's strongest band is band or further from the rule's lowest level.
+// False for a band the rule does not have.
+func (r Rule) AtLeast(v float64, band string) bool {
+	at := r.levelIndex(band)
+	if at < 0 {
+		return false
+	}
+	_, index := r.Strongest(v)
+	return index >= at
+}
+
 // degrees is every band a value belongs to, rounded to two places.
 func (r Rule) degrees(v float64) Degrees {
 	out := Degrees{}

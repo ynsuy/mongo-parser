@@ -30,8 +30,8 @@ rest — how much was logged over time, the slow queries and where their time we
 and sharding events, the catalogue changes, the conditions the server logged, and the log groups.
 
 An investigation narrows from there: open a label to see exactly which seconds it was past its
-mark, what the labels it pairs with did in those seconds, and what the node's log said; then read
-the seconds themselves with --at, and the log lines with lines.
+mark and what the node's log said; then read the seconds themselves with --at, and the log lines
+with lines.
 
 commands:
   report      the overall report (the default)
@@ -50,7 +50,7 @@ commands:
   ingest      read the bundle into the store now (every other command does it when it has to)
   prune       the stores this machine is keeping, and what to remove
   label       open one label up on a node: its stretches past the mark, second by second, beside
-              the labels it pairs with and the node's log in the same window
+              the node's log in the same window
   labels      the rule book: every label, what it is computed from, what it is read on, its bands
   version     which build this is, and when it was built
   mcp         serve these commands as MCP tools over stdio, for Claude Code, Codex or any MCP client

@@ -1,0 +1,23 @@
+pack: admission
+description: >-
+  A ticket pool empty often enough that operations are measurably waiting for one, not just a pool
+  running low without anyone noticing.
+
+classifiers:
+
+  - name: read_ticket_exhaustion
+    title: "Read ticket exhaustion"
+    doc: >-
+      The read ticket pool is repeatedly empty and operations are measurably waiting for one — a
+      pool that is merely low does not by itself mean anything queued for it.
+    when:
+      - {label: tickets.read.scarce, at_least: frequent}
+      - {label: tickets.read.wait, at_least: some}
+
+  - name: write_ticket_exhaustion
+    title: "Write ticket exhaustion"
+    doc: >-
+      The write ticket pool is repeatedly empty and operations are measurably waiting for one.
+    when:
+      - {label: tickets.write.scarce, at_least: frequent}
+      - {label: tickets.write.wait, at_least: some}

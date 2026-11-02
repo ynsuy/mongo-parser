@@ -1,0 +1,15 @@
+pack: connections
+description: >-
+  The connection pool running short often enough that new connections are actually being turned
+  away, not just a count that is merely high.
+
+classifiers:
+
+  - name: connection_storm
+    title: "Connection storm"
+    doc: >-
+      Connections are repeatedly scarce and some are being rejected at the same time — a high count
+      on its own can be a large, healthy pool; rejections are the sign the limit was actually hit.
+    when:
+      - {label: connections.scarce, at_least: frequent}
+      - {label: connections.rejected, at_least: some}

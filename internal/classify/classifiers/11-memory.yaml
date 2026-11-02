@@ -1,0 +1,15 @@
+pack: memory
+description: >-
+  Memory tight enough that the host has started giving some of it back to the kernel, not just a
+  high resident size on its own.
+
+classifiers:
+
+  - name: memory_pressure
+    title: "Memory pressure"
+    doc: >-
+      Host memory is high and the machine is swapping at the same time — resident size alone can be
+      high on a host sized for it; swapping is the sign the host itself is short.
+    when:
+      - {label: memory.used, at_least: high}
+      - {label: memory.swap_used, at_least: some}

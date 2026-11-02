@@ -53,6 +53,5 @@ func run(t *testing.T) []label.Result {
 	if len(results) == 0 {
 		t.Fatal("no labels")
 	}
-	label.Relate(results)
 	return results
 }
