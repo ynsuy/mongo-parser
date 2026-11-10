@@ -113,8 +113,9 @@ read-only. Add it to any MCP client by hand:
 claude mcp add mongo -- /path/to/mongo-parser mcp
 ```
 
-or, on the Percona Support team, install the `psb-mongo-diagnoser` plugin from the Percona Support
-Bazaar, which downloads the release binary and also brings the investigation skill and the hook.
+or, on the Percona Support team, use the `mongo-diagnoser` skill of the `psb-support-skills` plugin
+in the Percona Support Bazaar, which downloads the release binary named in its `bin/parser-version`
+and also brings the investigation procedure and the hook.
 
 `mongo-parser hook` reads a PreToolUse payload. A Read, Grep or Bash call that would read a file
 the parser read from a bundle on this machine, or a path shaped like one (`diagnostic.data`,
@@ -141,8 +142,8 @@ prints it, because a stale binary answers in the same format as a current one.
 
 A release is the `BASELINE` in `scripts/version.sh` and the tag `vX.Y.Z`, the same. Pushing the tag
 runs `.github/workflows/release.yml`, which tests, refuses a tag the baseline does not name, and
-publishes the four binaries (macOS and Linux, arm64 and amd64) with their checksums. The plugin
-names the release it downloads in its own `bin/parser-version`.
+publishes the four binaries (macOS and Linux, arm64 and amd64) with their checksums. The
+`psb-support-skills` plugin names the release it downloads in its own `bin/parser-version`.
 
 Time-series charts are compact Unicode bar strips (`▁▂▃▄▅▆▇█`), one bar per time bin, with a UTC axis
 labelled at every row and a line of figures (min, avg, p95, max and when) per strip; tables use plain

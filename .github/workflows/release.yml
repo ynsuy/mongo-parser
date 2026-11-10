@@ -1,4 +1,4 @@
-# A vX.Y.Z tag publishes the binaries the psb-mongo-diagnoser plugin downloads.
+# A vX.Y.Z tag publishes the binaries the psb-support-skills plugin downloads (bin/parser-version).
 name: release
 
 on:
