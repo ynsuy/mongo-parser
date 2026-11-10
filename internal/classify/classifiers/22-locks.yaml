@@ -1,0 +1,18 @@
+pack: locks
+description: >-
+  A write ticket pool emptied by operations queued behind a lock rather than by work: the tickets
+  are held, but by writes waiting their turn, not by writes using the storage engine.
+
+classifiers:
+
+  - name: capped_write_serialization
+    title: "Write tickets held by writes serialized on a capped collection"
+    doc: >-
+      The write ticket pool ran empty while operations were measurably waiting for an exclusive
+      metadata lock — the lock inserts and deletes on a capped collection take one at a time. Each
+      write queued for it keeps its write ticket, so a burst into one capped collection can starve
+      every other write on the node. The slow query log names the collection: writes whose locks
+      show Metadata timeAcquiringMicros W.
+    when:
+      - {label: tickets.write.empty, at_least: brief}
+      - {label: locks.metadata.exclusive_wait, at_least: heavy}

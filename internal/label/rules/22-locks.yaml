@@ -1,0 +1,143 @@
+pack: locks
+description: >-
+  Time operations spent waiting to acquire a lock, per resource and mode. A ticket pool can be
+  empty while the CPU and disks are quiet because the operations holding the tickets are not
+  working but queued behind a lock; these labels say which lock.
+
+# serverStatus.locks.<resource>.timeAcquiringMicros.<mode> only appears once a wait of that kind
+# has happened since the process started, so a node that never waited has no result, not a zero.
+# Every rule here reads one mode on its own: a sum over modes would drop every second in which one
+# of them had not appeared yet. The levels are the ones flow.wait and tickets.write.wait use, so the
+# three read alike: 1000 ms/s is one operation waiting the whole second, or ten waiting a tenth of it.
+
+rules:
+
+  - name: locks.metadata.exclusive_wait
+    title: "Time waiting for an exclusive metadata lock"
+    doc: >-
+      Milliseconds a second operations spent waiting to take a metadata resource lock in exclusive
+      mode, added across every operation waiting. Inserts and deletes on a capped collection other
+      than the oplog take this lock exclusively until their write unit of work ends, so writes to
+      one capped collection run one at a time (SERVER-21646); while they wait, each one still holds
+      the write ticket it took first.
+    applies: >-
+      The capped collection is not named here: the slow query log names it, as the namespace of
+      writes whose locks show Metadata timeAcquiringMicros W.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Metadata/timeAcquiringMicros/W"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.collection.exclusive_wait
+    title: "Time waiting for an exclusive collection lock"
+    doc: >-
+      Milliseconds a second operations spent waiting to take a collection lock in exclusive mode,
+      added across every operation waiting: DDL, index builds starting or finishing, and other
+      operations that need the whole collection to themselves.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Collection/timeAcquiringMicros/W"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.collection.intent_write_wait
+    title: "Time waiting for an intent-write collection lock"
+    doc: >-
+      Milliseconds a second writes spent waiting to take a collection lock in intent-exclusive
+      mode, added across every write waiting. Writes only wait here behind something holding the
+      collection in a stronger mode, such as DDL or an index build.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Collection/timeAcquiringMicros/w"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.database.exclusive_wait
+    title: "Time waiting for an exclusive database lock"
+    doc: >-
+      Milliseconds a second operations spent waiting to take a database lock in exclusive mode,
+      added across every operation waiting: database-wide DDL such as dropping or renaming across
+      databases.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Database/timeAcquiringMicros/W"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.database.intent_write_wait
+    title: "Time waiting for an intent-write database lock"
+    doc: >-
+      Milliseconds a second writes spent waiting to take a database lock in intent-exclusive mode,
+      added across every write waiting. Writes only wait here behind something holding the
+      database in a stronger mode.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Database/timeAcquiringMicros/w"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.global.exclusive_wait
+    title: "Time waiting for an exclusive global lock"
+    doc: >-
+      Milliseconds a second operations spent waiting to take the global lock in exclusive mode,
+      added across every operation waiting: fsyncLock, shutdown, a step-down and the like.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Global/timeAcquiringMicros/W"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
+
+  - name: locks.global.intent_write_wait
+    title: "Time waiting for an intent-write global lock"
+    doc: >-
+      Milliseconds a second writes spent waiting to take the global lock in intent-exclusive mode,
+      added across every write waiting. Writes only wait here behind a global exclusive or shared
+      holder.
+    signal:
+      mode: rate
+      unit: "ms/s"
+      scale: 0.001
+      num: ["serverStatus/locks/Global/timeAcquiringMicros/w"]
+    levels:
+      - {name: none, down: [1, 10]}
+      - {name: some, band: [1, 10, 100, 500]}
+      - {name: heavy, up: [100, 500]}
+    elevated: 100
+    min_change: 10
